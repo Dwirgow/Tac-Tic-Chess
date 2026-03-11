@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Tac-Tic Chess</title>
+
+    <!-- Tailwind CSS pour le style -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel pour compiler le JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Moteur d'échecs Lichess -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <style>
+        body, html {
+            background-color: #0f172a;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            overscroll-behavior-y: contain; 
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .perspective-1000 { perspective: 1000px; }
+        .preserve-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        
+        link[rel="apple-touch-icon"] {
+            background-color: #1e293b;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // ============================================================================
+        // URL DE VOTRE BASE DE DONNÉES ELO (Fichier JSON externe)
+        // L'application tentera de télécharger les problèmes depuis ce lien tous les jours.
+        // ============================================================================
+        const EXTERNAL_PUZZLES_URL = "https://votre-site.com/puzzles.json";
+
+        // --- BASE DE DONNÉES DE SECOURS ---
+        // Utilisée si le lien ci-dessus ne fonctionne pas. (Reconstruits fidèlement)
+        const FALLBACK_DB = [
+          { id: "W1", color: "w", elo: 1200, fen: "r1b2rk1/pp3ppp/2n5/8/2B1Q3/1P6/P1P2PPP/R1B3K1 b - - 0 1", moves: ["b7b6", "c4f7", "f8f7", "e4e8", "f7f8", "e8f8"], explanation: "Attaque double : sacrifice du Fou pour dévier la Tour et mater." },
+          { id: "B1", color: "b", elo: 1542, fen: "6k1/5p1p/4p3/4q3/3nN3/2Q3P1/PP3P1P/6K1 w - - 2 37", moves: ["e4d2", "d4e2", "g1f1", "e2c3"], explanation: "Fourchette Royale en finale : Le cavalier noir saute en e2." },
+          { id: "W2", color: "w", elo: 2205, fen: "r1b1kb1r/pppp1ppp/2n1p3/3nN3/3P2q1/4B3/PPP1BPPP/RN1Q1RK1 b kq - 9 8", moves: ["d5e3", "f2e3", "g4g5", "e5f7", "g5e3", "g1h1"], explanation: "Attaque à la découverte et fourchette royale." },
+          { id: "B2", color: "b", elo: 1980, fen: "6k1/p4pp1/7p/3p4/P1rP4/4P3/1p3PPP/1R4K1 w - - 0 31", moves: ["b1b2", "c4c1"], explanation: "Mat du couloir immédiat après une prise de pion trop gourmande." },
+          { id: "W3", color: "w", elo: 2861, fen: "r4r2/1p3pkp/p5p1/3R1N1Q/3P4/8/P1q2P2/3R2K1 b - - 3 25", moves: ["g6f5", "d5c5", "c2e4", "h5g5", "g7h8", "g5f6"], explanation: "Séquence magistrale : La Tour blanche enferme la Dame noire." },
+          { id: "B3", color: "b", elo: 1450, fen: "1k6/1p3ppp/p7/8/8/5P2/PP1r2PP/4R1K1 w - - 0 25", moves: ["e1e8", "b8a7", "e8e7", "d2b2", "e7f7"], explanation: "Contre-attaque : La Tour blanche force le Roi noir à se déplacer." },
+          { id: "W4", color: "w", elo: 2400, fen: "q3r1k1/5p1p/p2p2p1/1pnN4/3QP3/5P2/PP4PP/2R3K1 b - - 0 26", moves: ["c5e6", "d5f6", "g8f8", "d4d6", "e8e7", "f6d5"], explanation: "Puissante centralisation du Cavalier menant à une attaque." },
+          { id: "B4", color: "b", elo: 1850, fen: "3r2k1/p4ppp/1p2p3/8/2P1n3/1P3N2/P4PPP/R5K1 w - - 0 20", moves: ["a1e1", "e4c3", "a2a3", "c3a2"], explanation: "Infiltration du cavalier sur les cases faibles." },
+          { id: "W5", color: "w", elo: 1750, fen: "r1bq1rk1/1pp2ppp/p1np4/4p1N1/2B1P1n1/2NPP2P/PPP3P1/R2Q1RK1 b - - 0 1", moves: ["h7h6", "g5f7", "f8f7", "c4f7"], explanation: "Exploitation du clouage par le Cavalier sur f7." },
+          { id: "B5", color: "b", elo: 1700, fen: "2r3k1/1p1q1ppp/p2p1b2/3P4/5B2/1P3Q2/P4PPP/4R1K1 w - - 1 22", moves: ["h2h3", "c8c3", "e1e3", "c3c1"], explanation: "Prise de contrôle de la colonne ouverte." },
+          { id: "W6", color: "w", elo: 1650, fen: "r1bq1rk1/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R b KQ - 5 6", moves: ["f6e4", "c3e4", "d7d5", "c4d3"], explanation: "Récupération matérielle au centre de l'échiquier." },
+          { id: "B6", color: "b", elo: 1600, fen: "r1bq1rk1/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R w KQ - 5 6", moves: ["c3d5", "f6e4", "d1e2", "e4f6"], explanation: "Prise centrale gratuite après une imprécision." },
+          { id: "W7", color: "w", elo: 2100, fen: "8/8/4k1p1/2KpP2p/5PP1/8/8/8 b - - 0 52", moves: ["h5g4", "f4f5", "e6e5", "f5f6"], explanation: "Course de pions : Sacrifice pour forcer la promotion." },
+          { id: "B7", color: "b", elo: 1590, fen: "8/8/4k1p1/2KpP2p/5PP1/8/8/8 w - - 0 53", moves: ["g4h5", "g6h5", "f4f5", "e6e5"], explanation: "Finale de pions : Consolidation de la chaîne de pions." },
+          { id: "W8", color: "w", elo: 1950, fen: "r2q1rk1/ppp2ppp/2n1b3/3pP3/3Pn3/1B3N2/PP1N1PPP/R2Q1RK1 b - - 2 11", moves: ["f7f6", "d2e4", "d5e4", "b3e6"], explanation: "Exploitation de la faiblesse : attaque combinée au centre." }
+        ];
+
+        // --- UTILITAIRES ---
+        const posToAlgebraic = (r, c) => String.fromCharCode(97 + c) + (8 - r);
+        const algebraicToPos = (alg) => ({ r: 8 - parseInt(alg[1]), c: alg.charCodeAt(0) - 97 });
+        const toDateString = (dateObj) => {
+          const year = dateObj.getFullYear();
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+
+        const PIECE_URLS = {
+          'P': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+          'N': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+          'B': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+          'R': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+          'Q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+          'K': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+          'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
+          'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+          'b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+          'r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+          'q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+          'k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+        };
+
+        const IconArrowLeft = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>;
+        const IconArrowRight = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
+        const IconPlay = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
+        const IconTrophy = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
+
+        function App() {
+          const [isChessLoaded, setIsChessLoaded] = useState(false);
+          const [puzzleDatabase, setPuzzleDatabase] = useState([]);
+          const [isLoadingDB, setIsLoadingDB] = useState(true);
+          
+          useEffect(() => {
+            const initResources = async () => {
+                // 1. Chargement de Chess.js
+                if (!window.Chess) {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js';
+                    script.onload = () => setIsChessLoaded(true);
+                    document.head.appendChild(script);
+                } else {
+                    setIsChessLoaded(true);
+                }
+
+                // 2. TENTATIVE DE RÉCUPÉRATION EXTERNE (La fonction pour "piocher" en ligne)
+                try {
+                    const response = await fetch(EXTERNAL_PUZZLES_URL);
+                    if (!response.ok) throw new Error("Impossible de joindre la base externe.");
+                    const data = await response.json();
+                    if (Array.isArray(data) && data.length > 0 && data[0].fen) {
+                        setPuzzleDatabase(data);
+                    } else {
+                        throw new Error("Format de la base de données incorrect.");
+                    }
+                } catch (error) {
+                    // Si l'URL échoue, on bascule sur la base interne de manière invisible pour l'utilisateur
+                    setPuzzleDatabase(FALLBACK_DB); 
+                } finally {
+                    setIsLoadingDB(false);
+                }
+            };
+            initResources();
+          }, []);
+
+          // États Globaux
+          const [view, setView] = useState('home');
+          const [selectedDate, setSelectedDate] = useState(toDateString(new Date()));
+          const [weekOffset, setWeekOffset] = useState(0); 
+          const [isPracticeMode, setIsPracticeMode] = useState(false); 
+          const [history, setHistory] = useState({});
+          
+          const [dailyPuzzles, setDailyPuzzles] = useState([]);
+          const [currentPuzzleIdx, setCurrentPuzzleIdx] = useState(0);
+          const [globalTime, setGlobalTime] = useState(300);
+          const [isPaused, setIsPaused] = useState(true);
+          const [isAnimating, setIsAnimating] = useState(false);
+          
+          const [game, setGame] = useState(null);
+          const [currentFen, setCurrentFen] = useState('');
+          const [puzzleState, setPuzzleState] = useState('playing');
+          const [puzzleTimes, setPuzzleTimes] = useState([null, null, null, null, null]);
+          const [currentPuzzleTime, setCurrentPuzzleTime] = useState(0);
+          
+          const [selectedSquare, setSelectedSquare] = useState(null);
+          const [historyIndex, setHistoryIndex] = useState(0);
+          const [maxHistoryIndex, setMaxHistoryIndex] = useState(0);
+          const [flipped, setFlipped] = useState(false);
+          const initialMoveTimeout = useRef(null);
+
+          const boardRef = useRef(null);
+          const activeDrag = useRef(null);
+          const [ghostPiece, setGhostPiece] = useState(null);
+
+          useEffect(() => {
+            const saved = localStorage.getItem('chessDaily_history');
+            if (saved) setHistory(JSON.parse(saved));
+          }, []);
+
+          // Pioche séquentiellement 5 problèmes en fonction de la date, sans jamais les répéter.
+          const generatePuzzlesForDate = (dateStr, db) => {
+            if (!db || db.length === 0) return [];
+            
+            const epoch = new Date('2024-01-01T12:00:00Z').getTime();
+            const targetDate = new Date(dateStr + 'T12:00:00Z').getTime();
+            const daysPassed = Math.floor((targetDate - epoch) / (1000 * 60 * 60 * 24));
+
+            const selected = [];
+            for (let i = 0; i < 5; i++) {
+                const index = (Math.abs(daysPassed) * 5 + i) % db.length;
+                selected.push(db[index]);
+            }
+            return selected;
+          };
+
+          useEffect(() => {
+            if (puzzleDatabase.length > 0) {
+              setDailyPuzzles(generatePuzzlesForDate(selectedDate, puzzleDatabase));
+              if (history[selectedDate]) {
+                setPuzzleTimes(history[selectedDate].times);
+              } else {
+                setPuzzleTimes([null, null, null, null, null]);
+              }
+            }
+          }, [selectedDate, history, puzzleDatabase]);
+
+          useEffect(() => {
+            let interval;
+            if (view === 'playing' && !isPaused && globalTime > 0) {
+              interval = setInterval(() => {
+                setGlobalTime(prev => {
+                  if (prev <= 1) {
+                    handleTimeOut();
+                    return 0;
+                  }
+                  return prev - 1;
+                });
+                setCurrentPuzzleTime(prev => prev + 1);
+              }, 1000);
+            }
+            return () => clearInterval(interval);
+          }, [view, isPaused, globalTime]);
+
+          const handleTimeOut = () => {
+            setIsPaused(true);
+            setPuzzleState('failed');
+            setPuzzleTimes(prev => {
+              const newTimes = [...prev];
+              for (let i = currentPuzzleIdx; i < 5; i++) {
+                if (newTimes[i] === null) newTimes[i] = 'NA';
+              }
+              return newTimes;
+            });
+            setTimeout(() => finishDaily(), 2000);
+          };
+
+          const initPuzzle = (idx) => {
+            const puz = dailyPuzzles[idx];
+            if(!puz) return;
+            
+            const newGame = new window.Chess(puz.fen);
+            if (initialMoveTimeout.current) clearTimeout(initialMoveTimeout.current);
+
+            setGame(newGame);
+            setCurrentFen(newGame.fen()); 
+            setCurrentPuzzleIdx(idx);
+            setHistoryIndex(0);
+            setMaxHistoryIndex(0);
+            setCurrentPuzzleTime(0);
+            setPuzzleState('playing');
+            setFlipped(false);
+            setSelectedSquare(null);
+            setIsPaused(true); 
+            setIsAnimating(true);
+
+            // L'ordinateur joue l'erreur
+            initialMoveTimeout.current = setTimeout(() => {
+              const firstMoveUci = puz.moves[0];
+              newGame.move({
+                from: firstMoveUci.substring(0, 2),
+                to: firstMoveUci.substring(2, 4),
+                promotion: firstMoveUci.length === 5 ? firstMoveUci[4] : 'q'
+              });
+              setCurrentFen(newGame.fen());
+              setHistoryIndex(1);
+              setMaxHistoryIndex(1);
+              setIsPaused(false);
+              setIsAnimating(false);
+            }, 1000);
+          };
+
+          const startPlayingPhase = (forcePractice = false) => {
+            setIsPracticeMode(forcePractice);
+            const oldHistoryDay = history[selectedDate];
+            let initialTimes = [null, null, null, null, null];
+
+            if (oldHistoryDay && !forcePractice) {
+               initialTimes = [...oldHistoryDay.times];
+            }
+            setPuzzleTimes(initialTimes);
+
+            let firstUnsolved = 0;
+            if (!forcePractice) {
+                for(let i = 0; i < 5; i++) {
+                   if (typeof initialTimes[i] !== 'number') {
+                      firstUnsolved = i;
+                      break;
+                   }
+                }
+            }
+            setGlobalTime(300);
+            setView('playing');
+            initPuzzle(firstUnsolved);
+          };
+
+          const animateSolutionAndFail = (didMakeWrongMove) => {
+            setIsPaused(true);
+            setIsAnimating(true);
+            setPuzzleState('failed');
+            setPuzzleTimes(prev => {
+              const newTimes = [...prev];
+              newTimes[currentPuzzleIdx] = 'NA';
+              return newTimes;
+            });
+
+            const startAnimation = () => {
+              if (didMakeWrongMove) {
+                game.undo(); 
+                setCurrentFen(game.fen());
+              }
+
+              let tempIndex = historyIndex;
+              const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+
+              const playNext = () => {
+                if (tempIndex >= currentPuzzle.moves.length) {
+                  setHistoryIndex(tempIndex);
+                  initialMoveTimeout.current = setTimeout(() => {
+                    setFlipped(true);
+                    setIsAnimating(false);
+                  }, 600);
+                  return;
+                }
+                const nextUci = currentPuzzle.moves[tempIndex];
+                game.move({
+                  from: nextUci.substring(0, 2),
+                  to: nextUci.substring(2, 4),
+                  promotion: nextUci.length === 5 ? nextUci[4] : 'q'
+                });
+                setCurrentFen(game.fen());
+                tempIndex++;
+                setHistoryIndex(tempIndex);
+                initialMoveTimeout.current = setTimeout(playNext, 500);
+              };
+
+              if (didMakeWrongMove) {
+                initialMoveTimeout.current = setTimeout(playNext, 500);
+              } else {
+                playNext();
+              }
+            };
+
+            if (didMakeWrongMove) {
+              initialMoveTimeout.current = setTimeout(startAnimation, 800);
+            } else {
+              startAnimation();
+            }
+          };
+
+          const processMove = (fromR, fromC, toR, toC) => {
+            if (!game || isAnimating) return;
+            const fromAlg = posToAlgebraic(fromR, fromC);
+            const toAlg = posToAlgebraic(toR, toC);
+            const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+            const expectedUci = currentPuzzle.moves[historyIndex];
+
+            const moveAttempt = game.move({ from: fromAlg, to: toAlg, promotion: 'q' });
+            if (moveAttempt === null) {
+              setSelectedSquare(null);
+              return;
+            }
+
+            if (fromAlg === expectedUci.substring(0, 2) && toAlg === expectedUci.substring(2, 4)) {
+              setCurrentFen(game.fen());
+              setSelectedSquare(null);
+              setHistoryIndex(prev => prev + 1);
+              setMaxHistoryIndex(prev => prev + 1);
+
+              if (historyIndex + 1 === currentPuzzle.moves.length) {
+                handlePuzzleEnd('solved');
+              } else {
+                setIsPaused(true);
+                setIsAnimating(true);
+                setTimeout(() => {
+                  const oppUci = currentPuzzle.moves[historyIndex + 1];
+                  game.move({
+                    from: oppUci.substring(0, 2),
+                    to: oppUci.substring(2, 4),
+                    promotion: oppUci.length === 5 ? oppUci[4] : 'q'
+                  });
+                  setCurrentFen(game.fen());
+                  setHistoryIndex(prev => prev + 1);
+                  setMaxHistoryIndex(prev => prev + 1);
+                  
+                  if (historyIndex + 2 === currentPuzzle.moves.length) {
+                    handlePuzzleEnd('solved');
+                  } else {
+                    setIsPaused(false);
+                    setIsAnimating(false);
+                  }
+                }, 500);
+              }
+            } else {
+              setCurrentFen(game.fen());
+              setSelectedSquare(null);
+              animateSolutionAndFail(true);
+            }
+          };
+
+          const handlePointerDown = (e, r, c) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            if (puzzleState !== 'playing' || isPaused || isAnimating || !game) return;
+
+            if (historyIndex !== maxHistoryIndex) {
+              navigateHistory(maxHistoryIndex - historyIndex);
+              return;
+            }
+
+            const alg = posToAlgebraic(r, c);
+            const piece = game.get(alg);
+            const currentPuzzleColor = dailyPuzzles[currentPuzzleIdx].color;
+            const isPlayerPiece = piece && piece.color === currentPuzzleColor;
+
+            if (!isPlayerPiece) {
+              if (selectedSquare) processMove(selectedSquare.r, selectedSquare.c, r, c);
+              return;
+            }
+
+            setSelectedSquare({ r, c });
+            if (boardRef.current) {
+              const boardRect = boardRef.current.getBoundingClientRect();
+              const squareSize = boardRect.width / 8;
+              activeDrag.current = { r, c, piece, boardRect, squareSize, startX: e.clientX, startY: e.clientY, isDragging: false };
+            }
+          };
+
+          const handleGlobalPointerMove = (e) => {
+            if (!activeDrag.current || isAnimating) return;
+            if (!activeDrag.current.isDragging) {
+              const dx = e.clientX - activeDrag.current.startX;
+              const dy = e.clientY - activeDrag.current.startY;
+              if (Math.sqrt(dx * dx + dy * dy) > 5) activeDrag.current.isDragging = true;
+            }
+
+            if (activeDrag.current.isDragging) {
+              let charMap = null;
+              if (activeDrag.current.piece) {
+                 charMap = activeDrag.current.piece.color === 'w' ? activeDrag.current.piece.type.toUpperCase() : activeDrag.current.piece.type;
+              }
+              setGhostPiece({ piece: charMap, originR: activeDrag.current.r, originC: activeDrag.current.c, x: e.clientX, y: e.clientY });
+            }
+          };
+
+          const handleGlobalPointerUp = (e) => {
+            if (!activeDrag.current || isAnimating) return;
+            const { r: fromR, c: fromC, boardRect, squareSize, isDragging } = activeDrag.current;
+            activeDrag.current = null;
+            setGhostPiece(null);
+
+            if (isDragging) {
+              const x = e.clientX - boardRect.left;
+              const y = e.clientY - boardRect.top;
+              const toC = Math.floor(x / squareSize);
+              const toR = Math.floor(y / squareSize);
+
+              const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+              const isBlackToPlay = currentPuzzle && currentPuzzle.color === 'b';
+              const logicalToC = isBlackToPlay ? 7 - toC : toC;
+              const logicalToR = isBlackToPlay ? 7 - toR : toR;
+
+              if (logicalToC >= 0 && logicalToC < 8 && logicalToR >= 0 && logicalToR < 8) {
+                if (fromR !== logicalToR || fromC !== logicalToC) processMove(fromR, fromC, logicalToR, logicalToC);
+              }
+            }
+          };
+
+          const handlePuzzleEnd = (status) => {
+            setIsPaused(true);
+            setPuzzleState(status);
+            setPuzzleTimes(prev => {
+              const newTimes = [...prev];
+              newTimes[currentPuzzleIdx] = status === 'solved' ? currentPuzzleTime : 'NA';
+              return newTimes;
+            });
+            if (status === 'solved') {
+              setIsAnimating(true);
+              initialMoveTimeout.current = setTimeout(() => { setFlipped(true); setIsAnimating(false); }, 600);
+            }
+          };
+
+          const surrenderPuzzle = () => {
+            if (puzzleState !== 'playing' || isAnimating) return;
+            animateSolutionAndFail(false);
+          };
+
+          const nextPuzzle = () => {
+            let nextIdx = currentPuzzleIdx + 1;
+            if (!isPracticeMode) {
+                while(nextIdx < 5 && typeof puzzleTimes[nextIdx] === 'number') nextIdx++;
+            }
+            if (nextIdx < 5) initPuzzle(nextIdx);
+            else finishDaily();
+          };
+
+          const finishDaily = (goToHome = false) => {
+            if (goToHome) setView('home');
+            else setView('summary');
+
+            setPuzzleTimes(currentTimes => {
+              const oldHistoryDay = history[selectedDate];
+              const oldTimes = oldHistoryDay ? oldHistoryDay.times : Array(5).fill(null);
+              const mergedTimes = currentTimes.map((t, i) => {
+                if (typeof oldTimes[i] === 'number') {
+                  if (typeof t === 'number') return Math.min(t, oldTimes[i]); 
+                  return oldTimes[i];
+                }
+                return t !== null ? t : oldTimes[i];
+              });
+
+              if (!isPracticeMode) {
+                const newHistory = { ...history, [selectedDate]: { times: mergedTimes, timestamp: Date.now() } };
+                setHistory(newHistory);
+                localStorage.setItem('chessDaily_history', JSON.stringify(newHistory));
+              }
+              return mergedTimes;
+            });
+          };
+
+          const navigateHistory = (dir) => {
+            if (isAnimating) return; 
+            const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+            let newIndex = historyIndex + dir;
+            if (newIndex < 0) newIndex = 0; 
+            const limit = puzzleState === 'playing' ? maxHistoryIndex : currentPuzzle.moves.length;
+            if (newIndex > limit) newIndex = limit;
+            
+            setHistoryIndex(newIndex);
+            const newGame = new window.Chess(currentPuzzle.fen);
+            for (let i = 0; i < newIndex; i++) {
+              const m = currentPuzzle.moves[i];
+              newGame.move({ from: m.substring(0, 2), to: m.substring(2, 4), promotion: m.length === 5 ? m[4] : 'q' });
+            }
+            setGame(newGame);
+            setCurrentFen(newGame.fen());
+          };
+
+          const formatTime = (secs) => {
+            if (secs === 'NA') return 'NA';
+            if (secs == null) return '--:--';
+            const m = Math.floor(secs / 60).toString().padStart(2, '0');
+            const s = (secs % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+          };
+
+          if (!isChessLoaded || isLoadingDB) {
+            return (
+              <div className="flex flex-col items-center justify-center h-screen bg-slate-900 text-amber-400 font-bold space-y-4">
+                <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+                <div className="text-xl text-slate-100">Mise en place de Tac-Tic Chess...</div>
+              </div>
+            );
+          }
+
+          const renderHome = () => {
+            const historyDay = history[selectedDate];
+            const isPlayed = historyDay !== undefined;
+            const isPerfect = isPlayed && historyDay.times.every(t => typeof t === 'number');
+
+            const totalAttempted = Object.values(history).reduce((acc, day) => acc + day.times.filter(t => t !== null).length, 0);
+            const totalSolved = Object.values(history).reduce((acc, day) => acc + day.times.filter(t => typeof t === 'number').length, 0);
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const dayOfWeek = today.getDay();
+            const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            
+            const monday = new Date(today);
+            monday.setDate(today.getDate() + distanceToMonday + (weekOffset * 7));
+
+            const weekDays = [];
+            const initials = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+            for (let i = 0; i < 7; i++) {
+              const d = new Date(monday);
+              d.setDate(monday.getDate() + i);
+              const dateStr = toDateString(d);
+              weekDays.push({ dateStr, initial: initials[i], isToday: dateStr === toDateString(today), isFuture: d > today });
+            }
+
+            let weekLabel = "Semaine actuelle";
+            if (weekOffset < 0) weekLabel = `Semaine N${weekOffset}`;
+            if (weekOffset > 0) weekLabel = `Semaine N+${weekOffset}`;
+
+            return (
+              <div className="flex flex-col items-center p-4 sm:p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto">
+                <h1 className="text-3xl font-bold text-center mt-4 sm:mt-8 text-amber-400">Tac-Tic Chess</h1>
+                
+                <div className="w-full flex flex-col bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 gap-4">
+                  <div className="w-full flex justify-between items-center px-2">
+                     <button onClick={() => setWeekOffset(w => w - 1)} className="p-1 hover:bg-slate-700 rounded-lg text-slate-400 transition"><IconArrowLeft size={20}/></button>
+                     <div className="flex flex-col items-center"><span className="font-bold text-amber-400">{weekLabel}</span></div>
+                     <button onClick={() => setWeekOffset(w => w + 1)} className="p-1 hover:bg-slate-700 rounded-lg text-slate-400 transition"><IconArrowRight size={20}/></button>
+                  </div>
+
+                  {weekOffset !== 0 && (
+                     <div className="w-full flex justify-center -mt-2 mb-1">
+                        <button onClick={() => { setWeekOffset(0); setSelectedDate(toDateString(today)); }} className="text-[11px] bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded-full transition">Retour à la semaine actuelle</button>
+                     </div>
+                  )}
+                  
+                  <div className="flex justify-between w-full">
+                    {weekDays.map((day) => {
+                       const histDay = history[day.dateStr];
+                       const dayIsPlayed = histDay !== undefined;
+                       const dayIsPerfect = dayIsPlayed && histDay.times.every(t => t !== 'NA' && t !== null);
+                       const isSelected = selectedDate === day.dateStr;
+                       
+                       let baseClass = "w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ";
+                       
+                       if (day.isFuture) baseClass += "bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700/50";
+                       else if (dayIsPlayed) {
+                         if (dayIsPerfect) baseClass += "bg-emerald-500 text-white shadow-[0_0_8px_rgba(16,185,129,0.5)] cursor-pointer";
+                         else baseClass += "bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.5)] cursor-pointer";
+                       } 
+                       else if (day.isToday) baseClass += "bg-amber-500 text-white shadow-[0_0_8px_rgba(245,158,11,0.5)] cursor-pointer";
+                       else baseClass += "bg-slate-700 text-slate-300 hover:bg-slate-600 cursor-pointer";
+
+                       if (isSelected) baseClass += " ring-2 ring-white ring-offset-2 ring-offset-slate-800";
+
+                       return (
+                         <button key={day.dateStr} disabled={day.isFuture} onClick={() => setSelectedDate(day.dateStr)} className={baseClass}>
+                           {day.initial}
+                         </button>
+                       );
+                    })}
+                  </div>
+                </div>
+
+                <div className="text-center space-y-4 w-full">
+                  <p className="text-slate-400 text-sm">5 problèmes d'échecs classés par difficulté croissante. Le chrono s'arrête à la moindre erreur. Montrez votre écran à vos amis pour comparer !</p>
+                  
+                  {isPlayed ? (
+                    <div className={`p-4 sm:p-6 rounded-xl border shadow-xl w-full relative overflow-hidden ${isPerfect ? 'bg-slate-800 border-emerald-600/50 shadow-emerald-900/20' : 'bg-slate-800 border-red-600/50 shadow-red-900/20'}`}>
+                      <div className={`absolute top-0 right-0 p-3 opacity-20 ${isPerfect ? 'text-emerald-400' : 'text-red-400'}`}><IconTrophy /></div>
+                      <h2 className={`text-xl font-bold mb-4 ${isPerfect ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {isPerfect ? "Entraînement réussi !" : "Entraînement à parfaire"}
+                      </h2>
+                      <div className="flex justify-between sm:justify-center sm:space-x-4 mb-6">
+                        {historyDay.times.map((t, i) => (
+                          <div key={i} className="flex flex-col items-center">
+                            <span className="text-xs text-slate-400">P{i+1}</span>
+                            <span className={`text-base sm:text-xl font-mono font-bold ${t === 'NA' ? 'text-red-400' : 'text-emerald-300'}`}>{formatTime(t)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={() => startPlayingPhase(isPerfect)} className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition flex justify-center items-center gap-2">
+                        <IconPlay /> {isPerfect ? "Rejouer pour le fun" : "Améliorer mon score"}
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => startPlayingPhase(false)} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-600/30 transition transform hover:-translate-y-1 flex justify-center items-center gap-2">
+                      <IconPlay /> Démarrer les 5 Minutes
+                    </button>
+                  )}
+                </div>
+
+                <div className="w-full mt-4 bg-slate-800 rounded-xl p-4 border border-slate-700 text-center">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Mes Stats Globales</h3>
+                  <div className="flex justify-around items-center py-2">
+                     <div>
+                        <div className="text-2xl font-bold text-amber-400">{Object.keys(history).length}</div>
+                        <div className="text-xs text-slate-500">Jours joués</div>
+                     </div>
+                     <div>
+                        <div className="text-2xl font-bold text-emerald-400">{totalSolved} <span className="text-lg text-slate-500">/ {totalAttempted}</span></div>
+                        <div className="text-xs text-slate-500">Problèmes résolus</div>
+                     </div>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          const renderSummary = () => {
+            return (
+              <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100">
+                <div className="text-center mt-8">
+                  <h2 className="text-4xl font-bold text-amber-400 mb-2">Session terminée !</h2>
+                  <p className="text-slate-400">Score sauvegardé sur votre téléphone.</p>
+                </div>
+                
+                <div className="w-full space-y-3">
+                  {puzzleTimes.map((t, i) => {
+                    const eloText = dailyPuzzles[i] ? dailyPuzzles[i].explanation.split('\n')[0].split('|')[1]?.trim() : '';
+                    return (
+                      <div key={i} className="flex justify-between items-center p-4 bg-slate-800 rounded-xl border border-slate-700 shadow-lg">
+                        <span className="font-semibold text-slate-300">N°{i + 1} <span className="text-xs text-slate-500 ml-1">({eloText})</span></span>
+                        <span className={`text-xl font-mono font-bold ${t === 'NA' ? 'text-red-400' : 'text-emerald-400'}`}>{formatTime(t)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button onClick={() => setView('home')} className="w-full py-4 mb-8 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold text-lg shadow-lg transition">Retour à l'accueil</button>
+              </div>
+            );
+          };
+
+          const renderBoard = () => {
+            const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+            const isBlackToPlay = currentPuzzle.color === 'b';
+
+            const displayBoard = Array(8).fill(null).map(() => Array(8).fill(null));
+            for (let r = 0; r < 8; r++) {
+              for (let c = 0; c < 8; c++) {
+                const alg = posToAlgebraic(r, c);
+                const piece = game ? game.get(alg) : null;
+                if (piece) displayBoard[r][c] = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
+              }
+            }
+
+            const visualBoard = isBlackToPlay ? [...displayBoard].reverse().map(r => [...r].reverse()) : displayBoard;
+
+            return (
+              <div ref={boardRef} className="w-full aspect-square flex flex-col border-4 border-slate-800 rounded-sm overflow-hidden shadow-2xl relative touch-none select-none bg-slate-800">
+                {visualBoard.map((row, visualR) => (
+                  <div key={visualR} className="flex flex-1 w-full">
+                    {row.map((charPiece, visualC) => {
+                      const r = isBlackToPlay ? 7 - visualR : visualR;
+                      const c = isBlackToPlay ? 7 - visualC : visualC;
+
+                      const isDark = (r + c) % 2 === 1;
+                      const isSelected = selectedSquare?.r === r && selectedSquare?.c === c;
+                      const isDragged = ghostPiece?.originR === r && ghostPiece?.originC === c;
+                      
+                      let isLastMove = false;
+                      if (historyIndex > 0 && currentPuzzle.moves[historyIndex - 1]) {
+                        const lastM = currentPuzzle.moves[historyIndex - 1];
+                        const from = algebraicToPos(lastM.substring(0, 2));
+                        const to = algebraicToPos(lastM.substring(2, 4));
+                        if ((r === from.r && c === from.c) || (r === to.r && c === to.c)) isLastMove = true;
+                      }
+
+                      let bgClass = isDark ? 'bg-[#769656]' : 'bg-[#eeeed2]';
+                      if (isSelected) bgClass = 'bg-[#baca44]'; 
+                      else if (isLastMove) bgClass = isDark ? 'bg-[#baba32]' : 'bg-[#f6f669]'; 
+                      
+                      return (
+                        <div key={visualC} onPointerDown={(e) => handlePointerDown(e, r, c)} className={`flex-1 relative flex items-center justify-center ${bgClass} cursor-pointer`}>
+                          {charPiece && <img src={PIECE_URLS[charPiece]} alt={charPiece} className={`w-full h-full p-1 drop-shadow-md z-10 ${charPiece === charPiece.toUpperCase() ? 'brightness-110' : ''} ${isDragged ? 'opacity-30' : ''}`} draggable="false" />}
+                          {visualC === 0 && <span className={`absolute top-0.5 left-0.5 text-[10px] font-bold ${isDark ? 'text-[#eeeed2]' : 'text-[#769656]'}`}>{8 - r}</span>}
+                          {visualR === 7 && <span className={`absolute bottom-0.5 right-0.5 text-[10px] font-bold ${isDark ? 'text-[#eeeed2]' : 'text-[#769656]'}`}>{String.fromCharCode(97 + c)}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            );
+          };
+
+          const renderPlaying = () => {
+            const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+            return (
+              <div className="flex flex-col items-center w-full max-w-md mx-auto h-full min-h-screen bg-slate-900 text-slate-100 p-4 pb-8 overflow-y-auto" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
+                <div className="w-full flex justify-between items-center mb-6 bg-slate-800 p-4 rounded-xl border border-slate-700">
+                  <div className="flex space-x-1.5 sm:space-x-2">
+                    {[0, 1, 2, 3, 4].map(i => {
+                      let dotClass = '';
+                      if (i === currentPuzzleIdx) dotClass = 'bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.5)]';
+                      else if (puzzleTimes[i] === 'NA') dotClass = 'bg-red-900/50 text-red-400 border border-red-500/50';
+                      else if (typeof puzzleTimes[i] === 'number') dotClass = 'bg-emerald-900/50 text-emerald-400 border border-emerald-500/50';
+                      else dotClass = 'bg-slate-700 text-slate-500';
+                      
+                      return <div key={i} className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center font-bold font-mono text-xs sm:text-sm ${dotClass}`}>{i + 1}</div>;
+                    })}
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <div className={`text-2xl sm:text-3xl font-mono font-bold ${globalTime < 60 ? 'text-red-400 animate-pulse' : 'text-slate-100'}`}>{formatTime(globalTime)}</div>
+                  </div>
+                </div>
+
+                <div className="w-full aspect-square perspective-1000">
+                  <div className={`relative w-full h-full transition-transform duration-700 preserve-3d cursor-pointer ${flipped ? 'rotate-y-180' : ''}`} onClick={() => { if(puzzleState !== 'playing' && !isAnimating) setFlipped(!flipped) }}>
+                    <div className="absolute w-full h-full backface-hidden">{renderBoard()}</div>
+                    <div className="absolute w-full h-full backface-hidden rotate-y-180 bg-slate-800 rounded-xl border border-slate-600 p-6 flex flex-col justify-center items-center text-center shadow-2xl">
+                      <h3 className={`text-xl font-bold mb-2 ${puzzleState === 'solved' ? 'text-emerald-400' : 'text-red-400'}`}>{puzzleState === 'solved' ? 'Problème Résolu !' : 'Problème Non Résolu'}</h3>
+                      <div className="bg-slate-900 p-4 rounded-lg border border-slate-700 mb-4 w-full">
+                        <p className="font-mono text-amber-300 mb-2 text-sm">{currentPuzzle.explanation.split('\n')[0]}</p>
+                        <p className="text-slate-300 text-sm leading-relaxed">{currentPuzzle.explanation.split('\n')[1]}</p>
+                      </div>
+                      <p className="text-xs text-slate-500 mb-6">Cliquez n'importe où sur la carte pour revoir l'échiquier.</p>
+                      <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg relative z-50">
+                        {currentPuzzleIdx < 4 ? 'Problème Suivant' : 'Terminer'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="w-full mt-4 flex flex-col gap-3 bg-white p-3 rounded-xl shadow-lg text-slate-800">
+                  <div className="flex flex-row gap-3 items-stretch">
+                    <div className="w-1/2 flex justify-between items-center bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+                      <button onClick={() => navigateHistory(-1)} disabled={historyIndex === 0 || isAnimating} className="p-2 bg-slate-200 disabled:opacity-30 rounded hover:bg-slate-300 transition flex items-center justify-center text-slate-800"><IconArrowLeft size={14} /></button>
+                      <span className="font-mono text-[10px] sm:text-xs font-bold text-slate-600 truncate px-1 text-center">{puzzleState === 'playing' ? (historyIndex === maxHistoryIndex ? 'Actuel' : `-${maxHistoryIndex - historyIndex}`) : `${historyIndex}/${currentPuzzle.moves.length}`}</span>
+                      <button onClick={() => navigateHistory(1)} disabled={isAnimating || (puzzleState === 'playing' ? historyIndex === maxHistoryIndex : historyIndex === currentPuzzle.moves.length)} className="p-2 bg-slate-200 disabled:opacity-30 rounded hover:bg-slate-300 transition flex items-center justify-center text-slate-800"><IconArrowRight size={14} /></button>
+                    </div>
+
+                    {puzzleState === 'playing' ? (
+                      <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-1/2 bg-slate-50 hover:bg-red-50 disabled:opacity-50 text-slate-600 hover:text-red-500 border border-slate-200 rounded-lg font-bold transition text-xs sm:text-sm">Réponse (NA)</button>
+                    ) : (
+                      !flipped ? <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-1/2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white rounded-lg font-bold shadow-md text-xs sm:text-sm">{currentPuzzleIdx < 4 ? 'Suivant' : 'Terminer'}</button> : <div className="w-1/2"></div>
+                    )}
+                  </div>
+                  <button onClick={() => finishDaily(true)} className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-700 rounded-lg font-semibold transition text-xs border border-slate-200">Retour à l'accueil</button>
+                </div>
+              </div>
+            );
+          };
+
+          return (
+            <div className="flex h-screen bg-slate-900 w-full overflow-hidden">
+                <div className="flex-1 overflow-y-auto relative w-full">
+                    {ghostPiece && <img src={PIECE_URLS[ghostPiece.piece]} alt="dragged" className="fixed pointer-events-none z-[100] w-16 h-16 drop-shadow-2xl" style={{left: ghostPiece.x, top: ghostPiece.y, transform: 'translate(-50%, -50%)', filter: ghostPiece.piece === ghostPiece.piece.toUpperCase() ? 'brightness(1.1)' : 'none'}} />}
+                    {view === 'home' && renderHome()}
+                    {view === 'playing' && renderPlaying()}
+                    {view === 'summary' && renderSummary()}
+                </div>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
