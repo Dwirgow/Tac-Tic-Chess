@@ -8,22 +8,15 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Tac-Tic Chess</title>
 
-    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
-    <!-- ========================================== -->
-    <!-- CHARGEMENT DES MODULES FIREBASE            -->
-    <!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -90,6 +83,23 @@
           { id: "W3", color: "w", elo: 2861, fen: "r4r2/1p3pkp/p5p1/3R1N1Q/3P4/8/P1q2P2/3R2K1 b - - 3 25", moves: ["g6f5", "d5c5", "c2e4", "h5g5", "g7h8", "g5f6"], explanation: "Secours: Séquence magistrale." }
         ];
 
+        // ============================================================================
+        // FONCTION DE GESTION DES SONS
+        // ============================================================================
+        const playSound = (type) => {
+            const urls = {
+                move: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Move.ogg',
+                capture: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Capture.ogg',
+                flip: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/GenericNotify.ogg',
+                success: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/GenericNotify.ogg',
+                fail: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Error.ogg'
+            };
+            if (urls[type]) {
+                const audio = new Audio(urls[type]);
+                audio.play().catch(e => {}); 
+            }
+        };
+
         const posToAlgebraic = (r, c) => String.fromCharCode(97 + c) + (8 - r);
         const algebraicToPos = (alg) => ({ r: 8 - parseInt(alg[1]), c: alg.charCodeAt(0) - 97 });
         const toDateString = (dateObj) => {
@@ -100,7 +110,6 @@
         };
 
         const formatTime = (secs) => {
-            // Règle: Les NA (qu'ils soient résolus ou non plus tard) restent affichés comme "NA"
             if (secs === 'NA' || secs === 'NA_solved' || (typeof secs === 'string' && secs.includes('_NA'))) return 'NA';
             if (secs == null) return '--:--';
             
@@ -110,7 +119,6 @@
         };
 
         const getScoreStats = (timesArray) => {
-            // Seuls les vrais temps comptent pour le calcul du chrono total
             const solvedCount = timesArray.filter(t => typeof t === 'number').length;
             const totalTime = timesArray.reduce((sum, t) => (typeof t === 'number' ? sum + t : sum), 0);
             return { solvedCount, totalTime };
@@ -395,7 +403,13 @@
 
             initialMoveTimeout.current = setTimeout(() => {
               const firstMoveUci = puz.moves[0];
-              newGame.move({ from: firstMoveUci.substring(0, 2), to: firstMoveUci.substring(2, 4), promotion: firstMoveUci.length === 5 ? firstMoveUci[4] : 'q' });
+              const firstMove = newGame.move({ from: firstMoveUci.substring(0, 2), to: firstMoveUci.substring(2, 4), promotion: firstMoveUci.length === 5 ? firstMoveUci[4] : 'q' });
+              
+              if (firstMove) {
+                 if (firstMove.captured) playSound('capture');
+                 else playSound('move');
+              }
+              
               setCurrentFen(newGame.fen());
               setHistoryIndex(1);
               setMaxHistoryIndex(1);
@@ -446,11 +460,21 @@
               const playNext = () => {
                 if (tempIndex >= currentPuzzle.moves.length) {
                   setHistoryIndex(tempIndex);
-                  initialMoveTimeout.current = setTimeout(() => { setFlipped(true); setIsAnimating(false); }, 600);
+                  initialMoveTimeout.current = setTimeout(() => { 
+                      setFlipped(true); 
+                      playSound('fail'); // Son d'erreur si échec/abandon
+                      setIsAnimating(false); 
+                  }, 600);
                   return;
                 }
                 const nextUci = currentPuzzle.moves[tempIndex];
-                game.move({ from: nextUci.substring(0, 2), to: nextUci.substring(2, 4), promotion: nextUci.length === 5 ? nextUci[4] : 'q' });
+                const m = game.move({ from: nextUci.substring(0, 2), to: nextUci.substring(2, 4), promotion: nextUci.length === 5 ? nextUci[4] : 'q' });
+                
+                if (m) {
+                    if (m.captured) playSound('capture');
+                    else playSound('move');
+                }
+                
                 setCurrentFen(game.fen());
                 tempIndex++;
                 setHistoryIndex(tempIndex);
@@ -475,6 +499,9 @@
             const moveAttempt = game.move({ from: fromAlg, to: toAlg, promotion: 'q' });
             if (moveAttempt === null) { setSelectedSquare(null); return; }
 
+            if (moveAttempt.captured) playSound('capture');
+            else playSound('move');
+
             if (fromAlg === expectedUci.substring(0, 2) && toAlg === expectedUci.substring(2, 4)) {
               setCurrentFen(game.fen());
               setSelectedSquare(null);
@@ -488,7 +515,13 @@
                 setIsAnimating(true);
                 setTimeout(() => {
                   const oppUci = currentPuzzle.moves[historyIndex + 1];
-                  game.move({ from: oppUci.substring(0, 2), to: oppUci.substring(2, 4), promotion: oppUci.length === 5 ? oppUci[4] : 'q' });
+                  const oppMove = game.move({ from: oppUci.substring(0, 2), to: oppUci.substring(2, 4), promotion: oppUci.length === 5 ? oppUci[4] : 'q' });
+                  
+                  if (oppMove) {
+                      if (oppMove.captured) playSound('capture');
+                      else playSound('move');
+                  }
+                  
                   setCurrentFen(game.fen());
                   setHistoryIndex(prev => prev + 1);
                   setMaxHistoryIndex(prev => prev + 1);
@@ -575,7 +608,6 @@
 
               if (status === 'solved') {
                   if (isPracticeMode) {
-                      // Succès sur un échec précédent = On marque "NA_solved" pour la couleur verte, mais on garde "NA" en texte
                       if (oldVal === 'NA' || oldVal === 'NA_solved' || (typeof oldVal === 'string' && oldVal.includes('_NA'))) {
                           newTimes[currentPuzzleIdx] = 'NA_solved';
                       } else if (typeof oldVal === 'number') {
@@ -597,7 +629,11 @@
 
             if (status === 'solved') {
               setIsAnimating(true);
-              initialMoveTimeout.current = setTimeout(() => { setFlipped(true); setIsAnimating(false); }, 600);
+              initialMoveTimeout.current = setTimeout(() => { 
+                  setFlipped(true); 
+                  playSound('success'); // Son de réussite si résolu
+                  setIsAnimating(false); 
+              }, 600);
             }
           };
 
@@ -681,10 +717,17 @@
             
             setHistoryIndex(newIndex);
             const newGame = new window.Chess(currentPuzzle.fen);
+            let lastMove = null;
             for (let i = 0; i < newIndex; i++) {
               const m = currentPuzzle.moves[i];
-              newGame.move({ from: m.substring(0, 2), to: m.substring(2, 4), promotion: m.length === 5 ? m[4] : 'q' });
+              lastMove = newGame.move({ from: m.substring(0, 2), to: m.substring(2, 4), promotion: m.length === 5 ? m[4] : 'q' });
             }
+            
+            if (lastMove) {
+                if (lastMove.captured) playSound('capture');
+                else playSound('move');
+            }
+            
             setGame(newGame);
             setCurrentFen(newGame.fen());
           };
@@ -706,7 +749,6 @@
             const offTimes = historyDay ? (historyDay.officialTimes || historyDay.times) : [];
             const isCompleted = isStarted && offTimes.every(t => t !== null);
             
-            // LA NOUVELLE REGLE : On regarde si l'utilisateur a tout verdis (en vrai ou en practice) pour avoir la pastille verte finale !
             const currentTimes = historyDay ? historyDay.times : [];
             const isPerfect = isCompleted && currentTimes.every(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA')));
 
@@ -795,7 +837,6 @@
                        const loopOffTimes = loopHistDay ? (loopHistDay.officialTimes || loopHistDay.times) : [];
                        const loopDayIsCompleted = loopDayIsStarted && loopOffTimes.every(t => t !== null);
                        
-                       // Verification si tout a été verdi !
                        const loopCurrentTimes = loopHistDay ? loopHistDay.times : [];
                        const loopDayIsPerfect = loopDayIsCompleted && loopCurrentTimes.every(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA')));
                        
@@ -953,7 +994,6 @@
             const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'))).length;
             const isLocalPerfect = localSolvedCount === 5;
             
-            // Le total time affiché est juste la somme de ceux qui ont un vrai temps (officiel + repassés s'il y a un numéro)
             const stats = getScoreStats(displayTimes);
 
             const copyToClipboard = () => {
@@ -1094,7 +1134,7 @@
                       return (
                         <div 
                           key={i} 
-                          onClick={() => { if (isPracticeMode && !isAnimating) initPuzzle(i); }} 
+                          onClick={() => { if (isPracticeMode && !isAnimating) { initPuzzle(i); playSound('flip'); } }} 
                           className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center font-bold font-mono text-xs sm:text-sm ${dotClass} ${isPracticeMode && i !== currentPuzzleIdx ? 'cursor-pointer hover:scale-110 transition-transform hover:ring-2 ring-white/30' : ''}`}
                         >
                           {i + 1}
@@ -1108,7 +1148,7 @@
                 </div>
 
                 <div className="w-full aspect-square perspective-1000">
-                  <div className={`relative w-full h-full transition-transform duration-700 preserve-3d cursor-pointer ${flipped ? 'rotate-y-180' : ''}`} onClick={() => { if(puzzleState !== 'playing' && !isAnimating) setFlipped(!flipped) }}>
+                  <div className={`relative w-full h-full transition-transform duration-700 preserve-3d cursor-pointer ${flipped ? 'rotate-y-180' : ''}`} onClick={() => { if(puzzleState !== 'playing' && !isAnimating) { setFlipped(!flipped); playSound('flip'); } }}>
                     <div className="absolute w-full h-full backface-hidden">{renderBoard()}</div>
                     <div className="absolute w-full h-full backface-hidden rotate-y-180 bg-slate-800 rounded-xl border border-slate-600 p-6 flex flex-col justify-center items-center text-center shadow-2xl">
                       <h3 className={`text-xl font-bold mb-2 ${puzzleState === 'solved' ? 'text-emerald-400' : 'text-red-400'}`}>{puzzleState === 'solved' ? 'Problème Résolu !' : 'Problème Non Résolu'}</h3>
