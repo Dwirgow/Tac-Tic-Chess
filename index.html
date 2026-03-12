@@ -184,7 +184,6 @@
         const IconUser = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
         const IconFlame = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
 
-        // Fonction centralisée pour parser un CSV
         const parseCSV = (textData) => {
             try { return JSON.parse(textData); } catch (e) {}
             const lines = textData.replace(/\r/g, '').trim().split('\n');
@@ -230,8 +229,7 @@
           const [username, setUsername] = useState(localStorage.getItem('tactic_username') || `Joueur${Math.floor(Math.random()*10000)}`);
           const [isEditingUsername, setIsEditingUsername] = useState(false);
 
-          // Modes de jeux et historiques
-          const [gameMode, setGameMode] = useState('daily'); // 'daily' ou 'survival'
+          const [gameMode, setGameMode] = useState('daily'); 
           const [view, setView] = useState('home');
           const [selectedDate, setSelectedDate] = useState(toDateString(new Date()));
           const [weekOffset, setWeekOffset] = useState(0); 
@@ -312,7 +310,6 @@
             if (savedSurv) setSurvivalHistory(JSON.parse(savedSurv));
           }, []);
 
-          // Chargement BDD Classique (1 seul Elo)
           useEffect(() => {
               const fetchEloDatabase = async () => {
                   if (databases[selectedElo].length > 0) return; 
@@ -332,7 +329,6 @@
               if (isResourcesLoaded && gameMode === 'daily') fetchEloDatabase();
           }, [selectedElo, isResourcesLoaded, gameMode]);
 
-          // Téléchargement Complet (Pour le mode Survie)
           const loadAllDatabases = async () => {
               let currentDbs = { ...databases };
               let missingElos = ELO_CATEGORIES.filter(e => !currentDbs[e] || currentDbs[e].length === 0);
@@ -373,7 +369,6 @@
             return selected;
           };
 
-          // Met à jour les puzzles quotidiens si en mode daily
           useEffect(() => {
             if (gameMode !== 'daily') return;
             const currentDb = databases[selectedElo];
@@ -387,7 +382,8 @@
 
           useEffect(() => {
             let interval;
-            if (view === 'playing' && !isPaused && globalTime > 0) {
+            // Seul le mode daily possède une contrainte de temps
+            if (view === 'playing' && !isPaused && gameMode === 'daily' && globalTime > 0) {
               interval = setInterval(() => {
                 setGlobalTime(prev => {
                   if (prev <= 1) { handleTimeOut(); return 0; }
@@ -397,14 +393,13 @@
               }, 1000);
             }
             return () => clearInterval(interval);
-          }, [view, isPaused, globalTime]);
+          }, [view, isPaused, globalTime, gameMode]);
 
           const handleTimeOut = () => {
             setIsPaused(true);
             setPuzzleState('failed');
-            if (gameMode === 'survival') {
-                setTimeout(() => finishSurvival(), 2000);
-            } else {
+            // Timeout n'arrive qu'en daily
+            if (gameMode === 'daily') {
                 setPuzzleTimes(prev => {
                   const newTimes = [...prev];
                   if (!isPracticeMode) {
@@ -416,7 +411,6 @@
             }
           };
 
-          // Fetch Leaderboard (Gère les deux modes)
           useEffect(() => {
               if (view !== 'leaderboard' || !fbDb || !fbUser) return;
               
@@ -444,10 +438,7 @@
                   const unsubscribe = onSnapshot(colRef, (snapshot) => {
                       const allDocs = snapshot.docs.map(d => d.data());
                       const dayScores = allDocs.filter(s => s.date === selectedDate);
-                      dayScores.sort((a, b) => {
-                          if (a.score !== b.score) return b.score - a.score;
-                          return a.time - b.time;
-                      });
+                      dayScores.sort((a, b) => b.score - a.score); // Classement Survie basé uniquement sur le score
                       setSurvivalLeaderboard(dayScores);
                       setIsFetchingLb(false);
                   }, (error) => setIsFetchingLb(false));
@@ -496,43 +487,43 @@
           // LANCEMENT MODE SURVIE
           // ===============================================
           const startSurvivalPhase = async () => {
-              if (survivalHistory[selectedDate]) return; // Déjà joué aujourd'hui !
+              const todaySurv = survivalHistory[selectedDate];
+              if (todaySurv && todaySurv.status === 'completed') return; 
               
               const allDbs = await loadAllDatabases();
               
-              // 1 Problème de chaque Tranche (5) pour chaque jour de la semaine (Lun->Ven = 5) = 25
               const today = new Date(selectedDate + 'T12:00:00Z');
               const dayOfWeek = today.getDay();
               const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
               const monday = new Date(today);
               monday.setDate(today.getDate() + distanceToMonday);
               
-              let puz25 = [];
-              for (let i = 0; i < 5; i++) {
+              let puzAllWeek = [];
+              for (let i = 0; i < 7; i++) {
                   const d = new Date(monday);
                   d.setDate(monday.getDate() + i);
                   const dStr = toDateString(d);
                   
                   for (let elo of ELO_CATEGORIES) {
                       const dailyList = generatePuzzlesForDate(dStr, allDbs[elo]);
-                      if (dailyList && dailyList.length > 0) puz25.push(dailyList[0]);
+                      if (dailyList && dailyList.length > 0) {
+                          puzAllWeek.push(...dailyList); // Ajoute tous les problèmes quotidiens = ~175
+                      }
                   }
               }
               
-              // Mélange avec la date comme graine (même ordre pour tout le monde le même jour)
-              puz25 = shuffleArray(puz25, selectedDate);
+              puzAllWeek = shuffleArray(puzAllWeek, selectedDate);
               
-              setSurvivalPuzzles(puz25);
-              setDailyPuzzles(puz25); // On réutilise le même state pour le plateau
-              setCurrentPuzzleIdx(0);
-              setGlobalTime(300);
+              setSurvivalPuzzles(puzAllWeek);
+              setDailyPuzzles(puzAllWeek); // Plateau utilise dailyPuzzles
+              
+              const startIndex = todaySurv ? todaySurv.score : 0;
+              setCurrentPuzzleIdx(startIndex);
+              setGlobalTime(0); // Le chronomètre n'a pas d'importance ici
               setView('playing');
-              initPuzzle(0, puz25);
+              initPuzzle(startIndex, puzAllWeek);
           };
 
-          // ===============================================
-          // LANCEMENT MODE CLASSIQUE
-          // ===============================================
           const startPlayingPhase = (forcePractice = false) => {
             setIsPracticeMode(forcePractice);
             const hKey = getHistoryKey(selectedDate, selectedElo);
@@ -664,9 +655,8 @@
               setCurrentFen(game.fen());
               setSelectedSquare(null);
               animateSolutionAndFail(true);
-              // Si on est en mode survie, on perd immédiatement sur une erreur
               if (gameMode === 'survival') {
-                  setTimeout(() => finishSurvival(), 1500);
+                  setTimeout(() => finishSurvival(true), 1500); // true = game over
               }
             }
           };
@@ -736,15 +726,20 @@
             setIsPaused(true);
             setPuzzleState(status);
             
-            // Mode Survie : Le passage au problème suivant est automatique, pas de flip !
             if (gameMode === 'survival') {
                 if (status === 'solved') {
                     setIsAnimating(true);
                     playSound('success');
+                    
+                    const newScore = currentPuzzleIdx + 1;
+                    const newHistory = { ...survivalHistory, [selectedDate]: { score: newScore, status: 'playing', timestamp: Date.now() } };
+                    setSurvivalHistory(newHistory);
+                    localStorage.setItem('chessSurvival_history', JSON.stringify(newHistory));
+
                     setTimeout(() => {
                         let nextIdx = currentPuzzleIdx + 1;
-                        if (nextIdx >= 25) {
-                            finishSurvival(true); // Victoire
+                        if (nextIdx >= survivalPuzzles.length) {
+                            finishSurvival(true); 
                         } else {
                             initPuzzle(nextIdx, survivalPuzzles);
                         }
@@ -753,7 +748,6 @@
                 return;
             }
             
-            // Mode Classique
             setPuzzleTimes(prev => {
               const newTimes = [...prev];
               const oldVal = newTimes[currentPuzzleIdx];
@@ -790,7 +784,7 @@
             if (puzzleState !== 'playing' || isAnimating) return;
             animateSolutionAndFail(false);
             if (gameMode === 'survival') {
-                setTimeout(() => finishSurvival(), 1500);
+                setTimeout(() => finishSurvival(true), 1500);
             }
           };
 
@@ -826,15 +820,18 @@
           // ===============================================
           // SAUVEGARDE SURVIE
           // ===============================================
-          const finishSurvival = async (won = false) => {
+          const finishSurvival = async (isGameOver = false) => {
+              if (!isGameOver) {
+                  setView('home');
+                  return;
+              }
+
               setIsPaused(true);
               setView('summary');
               
-              // Score : Le nombre de problèmes passés. Si victoire, 25.
-              const score = won ? 25 : currentPuzzleIdx;
-              const timeTaken = 300 - globalTime;
+              const finalScore = (puzzleState === 'solved') ? currentPuzzleIdx + 1 : currentPuzzleIdx;
               
-              const newHistory = { ...survivalHistory, [selectedDate]: { score, time: timeTaken, timestamp: Date.now() } };
+              const newHistory = { ...survivalHistory, [selectedDate]: { score: finalScore, status: 'completed', timestamp: Date.now() } };
               setSurvivalHistory(newHistory);
               localStorage.setItem('chessSurvival_history', JSON.stringify(newHistory));
               
@@ -847,8 +844,7 @@
                           date: selectedDate,
                           userId: fbUser.uid,
                           username: username || "Joueur Anonyme",
-                          score: score,
-                          time: timeTaken,
+                          score: finalScore,
                           timestamp: Date.now()
                       });
                   } catch (e) { console.error("Erreur save survie", e); }
@@ -929,12 +925,13 @@
             if (gameMode === 'survival') {
                 const todaySurv = survivalHistory[selectedDate];
                 const hasPlayedSurv = todaySurv !== undefined;
+                const isCompletedSurv = hasPlayedSurv && todaySurv.status === 'completed';
+                const totalPuz = survivalPuzzles.length || 175;
                 
                 return (
                     <div className="flex flex-col items-center p-4 sm:p-6 space-y-5 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto pb-20">
                         <h1 className="text-4xl font-black text-center mt-4 sm:mt-6 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
                         
-                        {/* Sélecteur de mode */}
                         <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 mt-2 shadow-inner">
                             <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
                             <button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
@@ -953,20 +950,28 @@
                             </div>
                         </div>
 
-                        <div className={`w-full p-6 rounded-2xl border flex flex-col items-center shadow-xl relative overflow-hidden ${hasPlayedSurv ? 'bg-slate-800 border-slate-700' : 'bg-gradient-to-br from-amber-900/40 to-slate-800 border-amber-500/50'}`}>
+                        <div className={`w-full p-6 rounded-2xl border flex flex-col items-center shadow-xl relative overflow-hidden ${isCompletedSurv ? 'bg-slate-800 border-slate-700' : 'bg-gradient-to-br from-amber-900/40 to-slate-800 border-amber-500/50'}`}>
                             <div className="absolute top-0 right-0 p-3 opacity-10 text-amber-500"><IconFlame size={60} /></div>
                             
                             <h2 className="text-2xl font-black text-amber-400 mb-2">Mode Survie</h2>
-                            <p className="text-sm text-slate-300 text-center mb-6">25 Problèmes (de 400 à 2400 Elo).<br/>1 seule erreur permise.<br/>5 minutes maximum.</p>
+                            <p className="text-sm text-slate-300 text-center mb-6">~175 Problèmes par semaine.<br/>1 seule erreur permise.<br/>Aucune limite de temps.</p>
                             
                             {isLoadingDB ? (
                                 <div className="w-8 h-8 border-4 border-amber-400 border-t-transparent rounded-full animate-spin my-4"></div>
-                            ) : hasPlayedSurv ? (
+                            ) : isCompletedSurv ? (
                                 <div className="flex flex-col items-center w-full">
                                     <p className="text-slate-400 mb-1">Votre score d'aujourd'hui :</p>
-                                    <div className="text-5xl font-black text-amber-400 mb-2">{todaySurv.score} <span className="text-2xl text-slate-500">/ 25</span></div>
+                                    <div className="text-5xl font-black text-amber-400 mb-2">{todaySurv.score} <span className="text-2xl text-slate-500">/ {totalPuz}</span></div>
                                     <p className="text-sm text-slate-500 mb-6">Revenez demain pour une nouvelle tentative !</p>
                                     <button disabled className="w-full py-4 bg-slate-700 text-slate-500 rounded-xl font-bold shadow-lg cursor-not-allowed">Tentative terminée</button>
+                                </div>
+                            ) : hasPlayedSurv ? (
+                                <div className="flex flex-col items-center w-full">
+                                    <p className="text-slate-400 mb-1">Série en cours :</p>
+                                    <div className="text-5xl font-black text-amber-400 mb-6">{todaySurv.score} <span className="text-2xl text-slate-500">/ 175</span></div>
+                                    <button onClick={startSurvivalPhase} className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-lg shadow-[0_0_15px_rgba(245,158,11,0.4)] transition flex justify-center items-center gap-2">
+                                        <IconPlay /> Reprendre la Survie
+                                    </button>
                                 </div>
                             ) : (
                                 <button onClick={startSurvivalPhase} className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-lg shadow-[0_0_15px_rgba(245,158,11,0.4)] transition transform hover:-translate-y-1 flex justify-center items-center gap-2">
@@ -982,7 +987,6 @@
                 );
             }
 
-            // MODE CLASSIQUE (DAILY)
             const hKey = getHistoryKey(selectedDate, selectedElo);
             const historyDay = history[hKey];
             
@@ -1212,13 +1216,11 @@
                                                         {score.username} {score.userId === fbUser?.uid && " (Vous)"}
                                                     </span>
                                                 </div>
-                                                <div className="font-black text-xl text-amber-400">{score.score} <span className="text-sm text-slate-500">/25</span></div>
+                                                <div className="font-black text-xl text-amber-400">{score.score} <span className="text-sm text-slate-500">/175</span></div>
                                             </div>
-                                            <div className="pl-9 font-mono text-xs text-slate-400">Temps utilisé : {formatTime(score.time)}</div>
                                         </div>
                                     );
                                 }
-                                // Mode Daily normal
                                 const stats = getScoreStats(score.times);
                                 return (
                                     <div key={index} className={`flex flex-col gap-2 p-4 rounded-xl border ${score.userId === fbUser?.uid ? 'bg-indigo-900/40 border-indigo-500/50' : 'bg-slate-800 border-slate-700'} shadow-md`}>
@@ -1257,10 +1259,10 @@
             if (gameMode === 'survival') {
                 const todaySurv = survivalHistory[selectedDate];
                 const score = todaySurv ? todaySurv.score : currentPuzzleIdx;
-                const timeTaken = todaySurv ? todaySurv.time : (300 - globalTime);
+                const maxPuz = survivalPuzzles.length || 175;
                 
                 const copyToClipboard = () => {
-                    const text = `♟️ Tac-Tic Chess (Survie) - ${selectedDate}\n🔥 Score : ${score}/25\n⏱️ Temps : ${formatTime(timeTaken)}\nJouez ici : ${window.location.href}`;
+                    const text = `♟️ Tac-Tic Chess (Survie) - ${selectedDate}\n🔥 Score : ${score}/${maxPuz}\nJouez ici : ${window.location.href}`;
                     navigator.clipboard.writeText(text).then(() => alert("Votre score a été copié !"));
                 };
                 
@@ -1268,15 +1270,14 @@
                   <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-12">
                     <div className="text-center mt-8">
                       <h2 className="text-4xl font-bold text-amber-400 mb-1">
-                        {score === 25 ? "Légendaire !" : "Survie terminée !"}
+                        {score === maxPuz ? "Légendaire !" : "Survie terminée !"}
                       </h2>
                       <p className="text-slate-400 text-sm">Une erreur et c'est fini.</p>
                     </div>
                     
                     <div className="w-full text-center p-6 bg-slate-800 border border-amber-500/50 rounded-xl shadow-2xl">
                         <p className="text-sm text-slate-300 mb-2">Score Final</p>
-                        <p className="text-5xl font-black text-amber-400 mb-4">{score} <span className="text-2xl text-slate-500">/ 25</span></p>
-                        <p className="text-sm text-slate-400 font-mono">Temps utilisé: {formatTime(timeTaken)}</p>
+                        <p className="text-5xl font-black text-amber-400">{score} <span className="text-2xl text-slate-500">/ {maxPuz}</span></p>
                     </div>
 
                     <div className="w-full flex gap-3 mt-4">
@@ -1287,7 +1288,6 @@
                 );
             }
 
-            // SUMMARY DAILY CLASSIQUE
             const displayTimes = puzzleTimes;
             const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'))).length;
             const isLocalPerfect = localSolvedCount === 5;
@@ -1414,9 +1414,9 @@
                 nextBtnText = tempIdx >= 5 ? "Terminer" : "Problème Suivant";
             } else {
                 if (isCorrectionSession) {
-                    nextBtnText = hasRemainingNAs ? "Problème Suivant" : "Terminer";
+                    nextBtnText = hasRemainingNAs ? "Suivant" : "Terminer";
                 } else {
-                    nextBtnText = currentPuzzleIdx < 4 ? "Problème Suivant" : "Terminer";
+                    nextBtnText = currentPuzzleIdx < 4 ? "Suivant" : "Terminer";
                 }
             }
 
@@ -1430,14 +1430,20 @@
                     }} className="flex items-center gap-2 text-slate-400 hover:text-white transition font-bold text-sm bg-slate-800 py-2 px-3 rounded-lg border border-slate-700">
                         <IconArrowLeft size={18} /> Accueil
                     </button>
-                    <div className={`text-2xl font-mono font-bold px-3 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner ${globalTime < 60 ? 'text-red-400 animate-pulse border-red-500/50' : 'text-slate-100'}`}>
-                        {formatTime(globalTime)}
-                    </div>
+                    {gameMode === 'daily' ? (
+                        <div className={`text-2xl font-mono font-bold px-3 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner ${globalTime < 60 ? 'text-red-400 animate-pulse border-red-500/50' : 'text-slate-100'}`}>
+                            {formatTime(globalTime)}
+                        </div>
+                    ) : (
+                        <div className="text-lg font-bold px-3 py-1 bg-slate-800 rounded-lg border border-slate-700 text-amber-400 flex items-center shadow-inner">
+                            <IconFlame size={18} className="mr-1" /> Survie
+                        </div>
+                    )}
                 </div>
 
                 {gameMode === 'survival' ? (
                     <div className="w-full flex justify-center items-center mb-4 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
-                        <div className="text-2xl font-black text-amber-400 tracking-wider">Score : {currentPuzzleIdx} <span className="text-lg text-slate-500">/ 25</span></div>
+                        <div className="text-2xl font-black text-amber-400 tracking-wider">Score : {currentPuzzleIdx} <span className="text-lg text-slate-500">/ {survivalPuzzles.length || 175}</span></div>
                     </div>
                 ) : (
                     <div className="w-full flex justify-center space-x-3 mb-4 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
@@ -1451,7 +1457,7 @@
                               } else if (puzzleState === 'failed') {
                                   dotClass = 'bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.6)] scale-110'; 
                               } else {
-                                  dotClass = 'bg-amber-600 text-white shadow-[0_0_12px_rgba(217,119,6,0.6)] scale-110'; 
+                                  dotClass = 'bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.6)] scale-110'; 
                               }
                           } 
                           else if (puzzleTimes[i] === 'NA') {
@@ -1503,22 +1509,20 @@
 
                 <div className="w-full shrink-0 flex flex-col gap-3 mt-4">
                   
-                  {/* Ne montre pas l'historique des coups en mode survie pour gagner de la place et du temps */}
-                  {gameMode === 'daily' && (
-                      <div className="flex justify-between items-center bg-slate-800 p-2 rounded-xl border border-slate-700 shadow-md w-full h-16">
-                          <button onClick={() => navigateHistory(-1)} disabled={historyIndex === 0 || isAnimating} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
-                              <IconArrowLeft size={28} />
-                          </button>
-                          <div className="w-1/3 flex flex-col items-center justify-center text-center">
-                              <span className="font-mono text-sm sm:text-base font-bold text-slate-300">
-                                  {puzzleState === 'playing' ? (historyIndex === maxHistoryIndex ? 'Actuel' : `-${maxHistoryIndex - historyIndex}`) : `${historyIndex}/${currentPuzzle.moves.length}`}
-                              </span>
-                          </div>
-                          <button onClick={() => navigateHistory(1)} disabled={isAnimating || (puzzleState === 'playing' ? historyIndex === maxHistoryIndex : historyIndex === currentPuzzle.moves.length)} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
-                              <IconArrowRight size={28} />
-                          </button>
+                  {/* LIGNE 1 : Navigation dans les coups du problème (Historique) pour les deux modes */}
+                  <div className="flex justify-between items-center bg-slate-800 p-2 rounded-xl border border-slate-700 shadow-md w-full h-16">
+                      <button onClick={() => navigateHistory(-1)} disabled={historyIndex === 0 || isAnimating} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
+                          <IconArrowLeft size={28} />
+                      </button>
+                      <div className="w-1/3 flex flex-col items-center justify-center text-center">
+                          <span className="font-mono text-sm sm:text-base font-bold text-slate-300">
+                              {puzzleState === 'playing' ? (historyIndex === maxHistoryIndex ? 'Actuel' : `-${maxHistoryIndex - historyIndex}`) : `${historyIndex}/${currentPuzzle.moves.length}`}
+                          </span>
                       </div>
-                  )}
+                      <button onClick={() => navigateHistory(1)} disabled={isAnimating || (puzzleState === 'playing' ? historyIndex === maxHistoryIndex : historyIndex === currentPuzzle.moves.length)} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
+                          <IconArrowRight size={28} />
+                      </button>
+                  </div>
 
                   {gameMode === 'daily' && (
                       puzzleState === 'playing' ? (
@@ -1536,7 +1540,6 @@
                       )
                   )}
 
-                  {/* Boutons spécifiques au mode Survie */}
                   {gameMode === 'survival' && (
                       puzzleState === 'playing' ? (
                           <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-4 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-lg shadow-lg">
