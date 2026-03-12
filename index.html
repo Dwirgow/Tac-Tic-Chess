@@ -8,15 +8,22 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Tac-Tic Chess</title>
 
+    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
+    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
+    <!-- ========================================== -->
+    <!-- CHARGEMENT DES MODULES FIREBASE            -->
+    <!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -65,7 +72,6 @@
 
         // ============================================================================
         // 2. CONFIGURATION DES BASES DE DONNÉES PAR ELO
-        // Vous pouvez maintenant mettre des liens vers des fichiers .csv directement !
         // ============================================================================
         const ELO_CATEGORIES = [400, 900, 1400, 1900, 2400];
         const ELO_URLS = {
@@ -94,23 +100,17 @@
         };
 
         const formatTime = (secs) => {
-            if (secs === 'NA') return 'NA';
+            // Règle: Les NA (qu'ils soient résolus ou non plus tard) restent affichés comme "NA"
+            if (secs === 'NA' || secs === 'NA_solved' || (typeof secs === 'string' && secs.includes('_NA'))) return 'NA';
             if (secs == null) return '--:--';
             
-            let isPracticeNA = false;
-            let timeVal = secs;
-            
-            if (typeof secs === 'string' && secs.includes('_NA')) {
-                isPracticeNA = true;
-                timeVal = parseInt(secs.split('_')[0], 10);
-            }
-
-            const m = Math.floor(timeVal / 60).toString();
-            const s = (timeVal % 60).toString().padStart(2, '0');
-            return isPracticeNA ? `${m}:${s} (NA)` : `${m}:${s}`;
+            const m = Math.floor(secs / 60).toString();
+            const s = (secs % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
         };
 
         const getScoreStats = (timesArray) => {
+            // Seuls les vrais temps comptent pour le calcul du chrono total
             const solvedCount = timesArray.filter(t => typeof t === 'number').length;
             const totalTime = timesArray.reduce((sum, t) => (typeof t === 'number' ? sum + t : sum), 0);
             return { solvedCount, totalTime };
@@ -219,9 +219,6 @@
             if (saved) setHistory(JSON.parse(saved));
           }, []);
 
-          // ==================================================================
-          // CHARGEMENT DYNAMIQUE AVEC SUPPORT DU FORMAT CSV DE LICHESS
-          // ==================================================================
           useEffect(() => {
               const fetchEloDatabase = async () => {
                   if (databases[selectedElo].length > 0) return; 
@@ -229,17 +226,14 @@
                   setIsLoadingDB(true);
                   try {
                       const response = await fetch(ELO_URLS[selectedElo]);
-                      if (!response.ok) throw new Error("Fichier introuvable sur GitHub");
+                      if (!response.ok) throw new Error("Fichier introuvable");
                       
                       const textData = await response.text();
                       let parsedData = null;
 
-                      // 1. On essaye d'abord de lire le fichier comme un JSON classique
                       try {
                           parsedData = JSON.parse(textData);
                       } catch (e) {
-                          // 2. Si ça plante, c'est que c'est un CSV ! On le parse manuellement.
-                          // On utilise replace(/\r/g, '') pour nettoyer les sauts de ligne Windows invisibles
                           const lines = textData.replace(/\r/g, '').trim().split('\n');
                           const headers = lines[0].split(',');
                           
@@ -250,13 +244,10 @@
 
                           if (idIdx > -1 && fenIdx > -1 && movesIdx > -1) {
                               parsedData = [];
-                              // On saute la ligne 0 (les headers)
                               for (let i = 1; i < lines.length; i++) {
                                   const cols = lines[i].split(',');
                                   if (cols.length >= 4) {
                                       const fen = cols[fenIdx];
-                                      // Règle Lichess : FEN = position juste AVANT le coup adverse
-                                      // Si ' b ' (aux noirs de jouer l'erreur), le joueur jouera les Blancs ('w')
                                       const color = fen.includes(' b ') ? 'w' : 'b';
                                       
                                       parsedData.push({
@@ -278,9 +269,7 @@
                           throw new Error("Format de données invalide");
                       }
                   } catch (e) {
-                      console.warn(`Impossible de charger la DB Elo ${selectedElo}, utilisation du secours. Erreur:`, e);
-                      // Afficher une petite alerte visuelle pour vous prévenir que ça a échoué (vous pourrez l'enlever plus tard)
-                      alert(`Attention: Impossible de charger le fichier pour l'Elo ${selectedElo}. Vérifiez le nom du fichier !`);
+                      console.warn(`Impossible de charger la DB Elo ${selectedElo}, utilisation du secours.`);
                       setDatabases(prev => ({...prev, [selectedElo]: FALLBACK_DB})); 
                   } finally {
                       setIsLoadingDB(false);
@@ -586,9 +575,9 @@
 
               if (status === 'solved') {
                   if (isPracticeMode) {
-                      if (oldVal === 'NA' || (typeof oldVal === 'string' && oldVal.includes('_NA'))) {
-                          const prevTime = typeof oldVal === 'string' ? parseInt(oldVal.split('_')[0], 10) : Infinity;
-                          newTimes[currentPuzzleIdx] = `${Math.min(currentPuzzleTime, prevTime)}_NA`;
+                      // Succès sur un échec précédent = On marque "NA_solved" pour la couleur verte, mais on garde "NA" en texte
+                      if (oldVal === 'NA' || oldVal === 'NA_solved' || (typeof oldVal === 'string' && oldVal.includes('_NA'))) {
+                          newTimes[currentPuzzleIdx] = 'NA_solved';
                       } else if (typeof oldVal === 'number') {
                           newTimes[currentPuzzleIdx] = Math.min(currentPuzzleTime, oldVal);
                       } else {
@@ -618,12 +607,14 @@
           };
 
           const prevPuzzle = () => {
+            if (isAnimating) return;
             if (currentPuzzleIdx > 0) {
                 initPuzzle(currentPuzzleIdx - 1);
             }
           };
 
           const nextPuzzle = () => {
+            if (isAnimating) return;
             let nextIdx = currentPuzzleIdx + 1;
             if (!isPracticeMode) {
                 while(nextIdx < 5 && puzzleTimes[nextIdx] !== null) nextIdx++;
@@ -714,7 +705,10 @@
             const isStarted = historyDay !== undefined;
             const offTimes = historyDay ? (historyDay.officialTimes || historyDay.times) : [];
             const isCompleted = isStarted && offTimes.every(t => t !== null);
-            const isPerfect = isCompleted && offTimes.every(t => typeof t === 'number');
+            
+            // LA NOUVELLE REGLE : On regarde si l'utilisateur a tout verdis (en vrai ou en practice) pour avoir la pastille verte finale !
+            const currentTimes = historyDay ? historyDay.times : [];
+            const isPerfect = isCompleted && currentTimes.every(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA')));
 
             const allKeysThisElo = Object.keys(history).filter(k => k.endsWith(`_${selectedElo}`));
             const totalAttempted = allKeysThisElo.reduce((acc, k) => {
@@ -800,7 +794,11 @@
                        
                        const loopOffTimes = loopHistDay ? (loopHistDay.officialTimes || loopHistDay.times) : [];
                        const loopDayIsCompleted = loopDayIsStarted && loopOffTimes.every(t => t !== null);
-                       const loopDayIsPerfect = loopDayIsCompleted && loopOffTimes.every(t => typeof t === 'number');
+                       
+                       // Verification si tout a été verdi !
+                       const loopCurrentTimes = loopHistDay ? loopHistDay.times : [];
+                       const loopDayIsPerfect = loopDayIsCompleted && loopCurrentTimes.every(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA')));
+                       
                        const isSelected = selectedDate === day.dateStr;
                        
                        let baseClass = "w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ";
@@ -832,15 +830,14 @@
                     <div className={`p-4 sm:p-6 rounded-xl border shadow-xl w-full relative overflow-hidden ${isPerfect ? 'bg-slate-800 border-emerald-600/50 shadow-emerald-900/20' : (isCompleted ? 'bg-slate-800 border-red-600/50 shadow-red-900/20' : 'bg-slate-800 border-amber-600/50 shadow-amber-900/20')}`}>
                       <div className={`absolute top-0 right-0 p-3 opacity-20 ${isPerfect ? 'text-emerald-400' : (isCompleted ? 'text-red-400' : 'text-amber-400')}`}><IconTrophy /></div>
                       <h2 className={`text-xl font-bold mb-4 ${isPerfect ? 'text-emerald-400' : (isCompleted ? 'text-red-400' : 'text-amber-400')}`}>
-                        {isPerfect ? "Score parfait !" : (isCompleted ? "Session terminée" : "Session en cours...")}
+                        {isPerfect ? "Tous résolus !" : (isCompleted ? "Session terminée" : "Session en cours...")}
                       </h2>
                       <div className="flex justify-between sm:justify-center sm:space-x-4 mb-6">
-                        {historyDay.times.map((t, i) => {
-                          const isPracticeSuccess = typeof t === 'string' && t.includes('_NA');
-                          let colorClass = 'text-emerald-300';
+                        {currentTimes.map((t, i) => {
+                          const isPracticeSuccess = t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'));
+                          let colorClass = 'text-emerald-400';
                           if (t === 'NA') colorClass = 'text-red-400';
                           else if (t === null) colorClass = 'text-slate-600';
-                          else if (isPracticeSuccess) colorClass = 'text-amber-400'; 
 
                           return (
                             <div key={i} className="flex flex-col items-center">
@@ -855,7 +852,7 @@
                       
                       {isCompleted ? (
                           <button onClick={() => startPlayingPhase(true)} className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition flex justify-center items-center gap-2">
-                            <IconPlay /> S'entraîner (Ne compte pas)
+                            <IconPlay /> {isPerfect ? "Rejouer pour le fun" : "Corriger mes erreurs"}
                           </button>
                       ) : (
                           <button onClick={() => startPlayingPhase(false)} className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg transition flex justify-center items-center gap-2">
@@ -876,7 +873,7 @@
                 </div>
 
                 <div className="w-full mt-2 bg-slate-800 rounded-xl p-4 border border-slate-700 text-center">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Stats Globale ({selectedElo} Elo)</h3>
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Stats Officielles ({selectedElo} Elo)</h3>
                   <div className="flex justify-around items-center py-2">
                      <div>
                         <div className="text-2xl font-bold text-amber-400">{allKeysThisElo.length}</div>
@@ -884,7 +881,7 @@
                      </div>
                      <div>
                         <div className="text-2xl font-bold text-emerald-400">{totalSolved} <span className="text-lg text-slate-500">/ {totalAttempted}</span></div>
-                        <div className="text-xs text-slate-500">Problèmes résolus</div>
+                        <div className="text-xs text-slate-500">Problèmes réussis (du 1er coup)</div>
                      </div>
                   </div>
                 </div>
@@ -953,6 +950,10 @@
 
           const renderSummary = () => {
             const displayTimes = puzzleTimes;
+            const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'))).length;
+            const isLocalPerfect = localSolvedCount === 5;
+            
+            // Le total time affiché est juste la somme de ceux qui ont un vrai temps (officiel + repassés s'il y a un numéro)
             const stats = getScoreStats(displayTimes);
 
             const copyToClipboard = () => {
@@ -961,7 +962,7 @@
                 const officialStats = getScoreStats(officialTimes);
                 
                 const emojiBlocks = officialTimes.map(t => typeof t === 'number' ? '🟢' : (t === 'NA' ? '🔴' : '⚪')).join('');
-                const text = `♟️ Tac-Tic Chess (${selectedElo} Elo) - ${selectedDate}\n${emojiBlocks}\n${officialStats.solvedCount === 5 ? `⏱️ Temps : ${formatTime(officialStats.totalTime)}` : `❌ Terminé (${officialStats.solvedCount}/5)`}\nJouez ici : ${window.location.href}`;
+                const text = `♟️ Tac-Tic Chess (${selectedElo} Elo) - ${selectedDate}\n${emojiBlocks}\n${officialStats.solvedCount === 5 ? `⏱️ Temps : ${formatTime(officialStats.totalTime)}` : `❌ Score Officiel (${officialStats.solvedCount}/5)`}\nJouez ici : ${window.location.href}`;
                 navigator.clipboard.writeText(text).then(() => alert("Votre score officiel a été copié !"));
             };
 
@@ -969,7 +970,7 @@
               <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-12">
                 <div className="text-center mt-8">
                   <h2 className="text-4xl font-bold text-amber-400 mb-1">
-                    {isPracticeMode ? "Entraînement fini !" : "Session terminée !"}
+                    {isPracticeMode ? (isLocalPerfect ? "Tout est corrigé !" : "Entraînement fini !") : "Session terminée !"}
                   </h2>
                   <p className="text-slate-400 text-sm">Difficulté : <span className="text-amber-300 font-bold">{selectedElo} Elo</span></p>
                 </div>
@@ -977,10 +978,10 @@
                 <div className="w-full space-y-3">
                   {displayTimes.map((t, i) => {
                     const eloText = dailyPuzzles[i] ? dailyPuzzles[i].explanation.split('\n')[0].split('|')[1]?.trim() : '';
-                    const isPracticeSuccess = typeof t === 'string' && t.includes('_NA');
+                    const isPracticeSuccess = t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'));
                     let colorClass = 'text-emerald-400';
                     if (t === 'NA') colorClass = 'text-red-400';
-                    else if (isPracticeSuccess) colorClass = 'text-amber-400';
+                    else if (isPracticeSuccess) colorClass = 'text-emerald-400';
 
                     return (
                       <div key={i} className="flex justify-between items-center p-4 bg-slate-800 rounded-xl border border-slate-700 shadow-lg">
@@ -991,17 +992,17 @@
                   })}
                 </div>
 
-                <div className={`w-full text-center p-4 ${stats.solvedCount === 5 ? 'bg-emerald-900/30 border-emerald-500/50' : 'bg-slate-800 border-slate-700'} border rounded-xl`}>
+                <div className={`w-full text-center p-4 ${isLocalPerfect ? 'bg-emerald-900/30 border-emerald-500/50' : 'bg-slate-800 border-slate-700'} border rounded-xl`}>
                     <p className="text-sm text-slate-300 mb-1">
-                        {stats.solvedCount === 5 ? "Temps Total" : `Temps Total (${stats.solvedCount}/5 réussis)`}
+                        {isLocalPerfect ? "Temps Total" : `Temps Total (${localSolvedCount}/5 résolus)`}
                     </p>
-                    <p className={`text-3xl font-mono font-bold ${stats.solvedCount === 5 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    <p className={`text-3xl font-mono font-bold ${isLocalPerfect ? 'text-emerald-400' : 'text-amber-400'}`}>
                         {formatTime(stats.totalTime)}
                     </p>
                 </div>
 
                 <div className="w-full flex gap-3 mt-4">
-                    <button onClick={copyToClipboard} className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition text-sm">Partager 📋</button>
+                    <button onClick={copyToClipboard} className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition text-sm">Partager Officiel 📋</button>
                     <button onClick={() => setView('home')} className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition text-sm">Accueil</button>
                 </div>
               </div>
@@ -1069,19 +1070,20 @@
                   <div className="flex space-x-1.5 sm:space-x-2">
                     {[0, 1, 2, 3, 4].map(i => {
                       let dotClass = '';
+                      const isPracticeSuccess = puzzleTimes[i] === 'NA_solved' || (typeof puzzleTimes[i] === 'string' && puzzleTimes[i].includes('_NA'));
                       
                       if (i === currentPuzzleIdx) {
                           if (puzzleState === 'solved') {
-                              dotClass = 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'; // Vert
+                              dotClass = 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'; 
                           } else if (puzzleState === 'failed') {
-                              dotClass = 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)]'; // Rouge
+                              dotClass = 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)]'; 
                           } else {
-                              dotClass = 'bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.5)]'; // Orange
+                              dotClass = 'bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.5)]'; 
                           }
                       } 
                       else if (puzzleTimes[i] === 'NA') {
                           dotClass = 'bg-red-900/50 text-red-400 border border-red-500/50';
-                      } else if (typeof puzzleTimes[i] === 'string' && puzzleTimes[i].includes('_NA')) {
+                      } else if (isPracticeSuccess) {
                           dotClass = 'bg-emerald-900/50 text-emerald-400 border border-emerald-500/50';
                       } else if (typeof puzzleTimes[i] === 'number') {
                           dotClass = 'bg-emerald-900/50 text-emerald-400 border border-emerald-500/50';
@@ -1118,15 +1120,15 @@
                       
                       {isPracticeMode ? (
                           <div className="flex gap-3 w-full relative z-50">
-                              <button onClick={(e) => { e.stopPropagation(); prevPuzzle(); }} disabled={currentPuzzleIdx === 0} className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-white rounded-xl font-bold shadow-lg transition">
+                              <button onClick={(e) => { e.stopPropagation(); prevPuzzle(); }} disabled={currentPuzzleIdx === 0 || isAnimating} className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg transition">
                                   Précédent
                               </button>
-                              <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={currentPuzzleIdx === 4} className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-30 text-white rounded-xl font-bold shadow-lg transition">
+                              <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={currentPuzzleIdx === 4 || isAnimating} className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg transition">
                                   Suivant
                               </button>
                           </div>
                       ) : (
-                          <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg relative z-50">
+                          <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg relative z-50 transition">
                             {currentPuzzleIdx < 4 ? 'Problème Suivant' : 'Terminer'}
                           </button>
                       )}
@@ -1146,7 +1148,7 @@
                       <div className="w-3/5 flex gap-1.5">
                          <button onClick={prevPuzzle} disabled={currentPuzzleIdx === 0 || isAnimating} className="flex-1 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 text-slate-700 rounded-lg flex justify-center items-center transition"><IconArrowLeft size={16}/></button>
                          {puzzleState === 'playing' ? (
-                            <button onClick={surrenderPuzzle} disabled={isAnimating} className="flex-[2] bg-slate-50 hover:bg-red-50 disabled:opacity-50 text-slate-600 hover:text-red-500 border border-slate-200 rounded-lg font-bold transition text-xs">Solution</button>
+                            <button onClick={surrenderPuzzle} disabled={isAnimating} className="flex-[2] bg-slate-50 hover:bg-red-50 disabled:opacity-50 text-slate-600 hover:text-red-50 border border-slate-200 rounded-lg font-bold transition text-xs">Solution</button>
                          ) : (
                             <button onClick={nextPuzzle} disabled={currentPuzzleIdx === 4 || isAnimating} className="flex-[2] bg-amber-500 hover:bg-amber-400 disabled:opacity-30 text-white rounded-lg font-bold shadow-md transition text-xs">Suivant</button>
                          )}
