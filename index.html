@@ -445,7 +445,6 @@
             const oldHistoryDay = history[hKey];
             let initialTimes = [null, null, null, null, null];
             
-            // Récupération du chronomètre global sauvegardé
             let savedTime = 300;
 
             if (oldHistoryDay) {
@@ -462,8 +461,15 @@
                    if (initialTimes[i] === null) { firstUnsolved = i; break; }
                 }
             } else {
-                // En practice, on réinitialise toujours le chrono
-                savedTime = 300;
+                savedTime = 300; // En practice, on ne s'occupe pas du chrono
+                
+                // Si on lance "Corriger mes erreurs", on cible d'abord le premier NA !
+                const isCorrection = initialTimes.some(t => t === 'NA');
+                if (isCorrection) {
+                    for(let i = 0; i < 5; i++) {
+                        if (initialTimes[i] === 'NA') { firstUnsolved = i; break; }
+                    }
+                }
             }
             
             setGlobalTime(savedTime);
@@ -681,14 +687,45 @@
             }
           };
 
+          // ===============================================================
+          // LOGIQUE INTELLIGENTE DU BOUTON SUIVANT
+          // ===============================================================
           const nextPuzzle = () => {
             if (isAnimating) return;
             let nextIdx = currentPuzzleIdx + 1;
+            
             if (!isPracticeMode) {
+                // Partie Officielle: On cherche la prochaine case non jouée
                 while(nextIdx < 5 && puzzleTimes[nextIdx] !== null) nextIdx++;
+                if (nextIdx < 5) initPuzzle(nextIdx);
+                else finishDaily(); 
+            } else {
+                // Mode Entraînement: On distingue "Corriger" vs "Rejouer"
+                const hKey = getHistoryKey(selectedDate, selectedElo);
+                const histDay = history[hKey];
+                const isCorrectionSession = histDay && (histDay.officialTimes || histDay.times).some(t => t === 'NA');
+                
+                if (isCorrectionSession) {
+                    // On cherche d'abord la prochaine erreur APRÈS le puzzle actuel
+                    const remainingNA = puzzleTimes.findIndex((t, idx) => t === 'NA' && idx > currentPuzzleIdx);
+                    if (remainingNA !== -1) {
+                        initPuzzle(remainingNA);
+                    } else {
+                        // S'il n'y a pas d'erreur après, on cherche s'il y en a une AVANT (boucle)
+                        const anyNA = puzzleTimes.findIndex(t => t === 'NA');
+                        if (anyNA !== -1) {
+                            initPuzzle(anyNA);
+                        } else {
+                            // PLUS AUCUNE ERREUR ! On a tout corrigé, on retombe automatiquement à l'accueil.
+                            finishDaily(true); 
+                        }
+                    }
+                } else {
+                    // Mode "Rejouer pour le fun" (Aucune erreur à corriger)
+                    if (nextIdx < 5) initPuzzle(nextIdx);
+                    else finishDaily(true); // Fini de s'amuser, retour accueil
+                }
             }
-            if (nextIdx < 5) initPuzzle(nextIdx);
-            else finishDaily();
           };
 
           const saveScoreToFirebase = async (mergedTimes) => {
@@ -731,7 +768,7 @@
                     [hKey]: { 
                         times: mergedTimes, 
                         officialTimes: officialTimes, 
-                        remainingTime: globalTime, // <-- Sauvegarde du chronomètre ici
+                        remainingTime: globalTime,
                         timestamp: Date.now() 
                     } 
                 };
@@ -1152,6 +1189,26 @@
 
           const renderPlaying = () => {
             const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+            
+            // Calculer dynamiquement le texte du bouton "Suivant"
+            const hKey = getHistoryKey(selectedDate, selectedElo);
+            const histDay = history[hKey];
+            const isCorrectionSession = isPracticeMode && histDay && (histDay.officialTimes || histDay.times).some(t => t === 'NA');
+            const hasRemainingNAs = puzzleTimes.some(t => t === 'NA');
+
+            let nextBtnText = "Suivant";
+            if (!isPracticeMode) {
+                let tempIdx = currentPuzzleIdx + 1;
+                while(tempIdx < 5 && puzzleTimes[tempIdx] !== null) tempIdx++;
+                nextBtnText = tempIdx >= 5 ? "Terminer" : "Problème Suivant";
+            } else {
+                if (isCorrectionSession) {
+                    nextBtnText = hasRemainingNAs ? "Suivant" : "Terminer";
+                } else {
+                    nextBtnText = currentPuzzleIdx < 4 ? "Suivant" : "Terminer";
+                }
+            }
+
             return (
               <div className="flex flex-col items-center w-full max-w-md mx-auto h-full min-h-screen bg-slate-900 text-slate-100 p-4 pb-8 overflow-y-auto" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
                 <div className="w-full flex justify-between items-center mb-6 bg-slate-800 p-4 rounded-xl border border-slate-700">
@@ -1221,13 +1278,13 @@
                               <button onClick={(e) => { e.stopPropagation(); prevPuzzle(); }} disabled={currentPuzzleIdx === 0 || isAnimating} className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg transition">
                                   Précédent
                               </button>
-                              <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={currentPuzzleIdx === 4 || isAnimating} className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg transition">
-                                  Suivant
+                              <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg transition">
+                                  {nextBtnText}
                               </button>
                           </div>
                       ) : (
                           <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg relative z-50 transition">
-                            {currentPuzzleIdx < 4 ? 'Problème Suivant' : 'Terminer'}
+                            {nextBtnText}
                           </button>
                       )}
                     </div>
@@ -1248,14 +1305,14 @@
                          {puzzleState === 'playing' ? (
                             <button onClick={surrenderPuzzle} disabled={isAnimating} className="flex-[2] bg-slate-50 hover:bg-red-50 disabled:opacity-50 text-slate-600 hover:text-red-50 border border-slate-200 rounded-lg font-bold transition text-xs">Solution</button>
                          ) : (
-                            <button onClick={nextPuzzle} disabled={currentPuzzleIdx === 4 || isAnimating} className="flex-[2] bg-amber-500 hover:bg-amber-400 disabled:opacity-30 text-white rounded-lg font-bold shadow-md transition text-xs">Suivant</button>
+                            <button onClick={nextPuzzle} disabled={isAnimating} className="flex-[2] bg-amber-500 hover:bg-amber-400 disabled:opacity-30 text-white rounded-lg font-bold shadow-md transition text-xs">{nextBtnText}</button>
                          )}
                       </div>
                     ) : (
                       puzzleState === 'playing' ? (
                         <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-1/2 bg-slate-50 hover:bg-red-50 disabled:opacity-50 text-slate-600 hover:text-red-500 border border-slate-200 rounded-lg font-bold transition text-xs sm:text-sm">Réponse (NA)</button>
                       ) : (
-                        !flipped ? <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-1/2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white rounded-lg font-bold shadow-md text-xs sm:text-sm">{currentPuzzleIdx < 4 ? 'Suivant' : 'Terminer'}</button> : <div className="w-1/2"></div>
+                        !flipped ? <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-1/2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white rounded-lg font-bold shadow-md text-xs sm:text-sm">{nextBtnText}</button> : <div className="w-1/2"></div>
                       )
                     )}
                   </div>
