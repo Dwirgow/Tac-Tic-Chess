@@ -105,7 +105,7 @@
         ];
 
         // ============================================================================
-        // TIREUR ALÉATOIRE SÉCURISÉ (Génère le même mélange pour la même date)
+        // TIREUR ALÉATOIRE SÉCURISÉ
         // ============================================================================
         const getSeededRandom = (seedStr) => {
             let h = 0xdeadbeef;
@@ -177,12 +177,12 @@
           'q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg', 'k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
         };
 
-        const IconArrowLeft = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>;
-        const IconArrowRight = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
+        const IconArrowLeft = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m15 18-6-6 6-6"/></svg>;
+        const IconArrowRight = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m9 18 6-6-6-6"/></svg>;
         const IconPlay = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
         const IconTrophy = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
         const IconUser = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
-        const IconFlame = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-2.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
+        const IconFlame = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
 
         const parseCSV = (textData) => {
             try { return JSON.parse(textData); } catch (e) {}
@@ -1420,7 +1420,7 @@
             }
 
             return (
-              <div className="flex flex-col items-center w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 p-4 pb-6 overflow-hidden" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
+              <div className="flex flex-col items-center w-full max-w-md mx-auto h-[100dvh] bg-slate-900 text-slate-100 p-4 pb-4 overflow-hidden" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
                 
                 {/* EN-TÊTE AVEC TITRE INTÉGRÉ ET FIXE */}
                 <div className="w-full flex justify-between items-center mb-4 shrink-0">
@@ -1490,7 +1490,8 @@
                     </div>
                 )}
 
-                <div className="flex-1 w-full min-h-0 flex items-center justify-center">
+                <div className="flex-1 w-full flex items-center justify-center">
+                  {/* RETOUR DU CODE ORIGINAL MAX-W-[420px] SANS LE MIN() CALCULÉ */}
                   <div className="w-full max-w-[420px] max-h-full aspect-square relative">
                     <div className={`w-full h-full transition-transform duration-700 preserve-3d cursor-pointer ${flipped ? 'rotate-y-180' : ''}`} onClick={() => { 
                         if(puzzleState !== 'playing' && !isAnimating && gameMode !== 'survival') { 
@@ -1512,29 +1513,31 @@
                   </div>
                 </div>
 
-                <div className="w-full shrink-0 flex flex-col gap-3 mt-4">
+                <div className="w-full shrink-0 flex flex-col gap-2 mt-2">
                   
-                  <div className="flex justify-between items-center bg-slate-800 p-2 rounded-xl border border-slate-700 shadow-md w-full h-16">
+                  {/* BOUTONS D'HISTORIQUE RÉDUITS EN HAUTEUR (h-12 au lieu de h-16) */}
+                  <div className="flex justify-between items-center bg-slate-800 p-1.5 rounded-xl border border-slate-700 shadow-md w-full h-12">
                       <button onClick={() => navigateHistory(-1)} disabled={historyIndex === 0 || isAnimating} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
-                          <IconArrowLeft size={28} />
+                          <IconArrowLeft size={24} />
                       </button>
                       <div className="w-1/3 flex flex-col items-center justify-center text-center">
-                          <span className="font-mono text-sm sm:text-base font-bold text-slate-300">
+                          <span className="font-mono text-sm font-bold text-slate-300">
                               {puzzleState === 'playing' ? (historyIndex === maxHistoryIndex ? 'Actuel' : `-${maxHistoryIndex - historyIndex}`) : `${historyIndex}/${currentPuzzle.moves.length}`}
                           </span>
                       </div>
                       <button onClick={() => navigateHistory(1)} disabled={isAnimating || (puzzleState === 'playing' ? historyIndex === maxHistoryIndex : historyIndex === currentPuzzle.moves.length)} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
-                          <IconArrowRight size={28} />
+                          <IconArrowRight size={24} />
                       </button>
                   </div>
 
                   {gameMode === 'daily' && (
                       puzzleState === 'playing' ? (
-                          <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-4 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-lg shadow-lg">
+                          // BOUTON D'ACTION PRINCIPAL RÉDUIT EN HAUTEUR (py-2.5 au lieu de py-4, text-base au lieu de text-lg)
+                          <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-2.5 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-base shadow-lg">
                               Voir la solution (NA)
                           </button>
                       ) : (
-                          <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-full py-4 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg text-lg transition">
+                          <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg text-base transition">
                               {nextBtnText}
                           </button>
                       )
@@ -1542,11 +1545,11 @@
 
                   {gameMode === 'survival' && (
                       puzzleState === 'playing' ? (
-                          <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-4 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-lg shadow-lg">
+                          <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-2.5 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-base shadow-lg">
                               Abandonner la Survie
                           </button>
                       ) : (
-                           <div className="h-[60px] flex items-center justify-center text-slate-400 font-bold animate-pulse">Validation en cours...</div>
+                           <div className="h-[44px] flex items-center justify-center text-slate-400 font-bold animate-pulse text-sm">Validation en cours...</div>
                       )
                   )}
 
