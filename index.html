@@ -8,18 +8,22 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Tac-Tic Chess</title>
 
-    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        window.FirebaseLib = { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, doc, setDoc, getDocs, onSnapshot };
+    </script>
 
     <style>
         body, html {
@@ -35,10 +39,10 @@
         .preserve-3d { transform-style: preserve-3d; }
         .backface-hidden { backface-visibility: hidden; }
         .rotate-y-180 { transform: rotateY(180deg); }
+        link[rel="apple-touch-icon"] { background-color: #1e293b; }
         
-        link[rel="apple-touch-icon"] {
-            background-color: #1e293b;
-        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body>
@@ -48,32 +52,37 @@
         const { useState, useEffect, useRef, useMemo } = React;
 
         // ============================================================================
-        // URL DE VOTRE BASE DE DONNÉES ELO (Fichier JSON externe)
-        // L'application tentera de télécharger les problèmes depuis ce lien tous les jours.
+        // 1. CONFIGURATION FIREBASE (À REMPLIR AVEC VOS IDENTIFIANTS)
         // ============================================================================
-        const EXTERNAL_PUZZLES_URL = "https://votre-site.com/puzzles.json";
+        const monFirebaseConfig = {
+            apiKey: "VOTRE_API_KEY",
+            authDomain: "VOTRE_PROJET.firebaseapp.com",
+            projectId: "VOTRE_PROJET_ID",
+            storageBucket: "VOTRE_PROJET.appspot.com",
+            messagingSenderId: "VOTRE_SENDER_ID",
+            appId: "VOTRE_APP_ID"
+        };
 
-        // --- BASE DE DONNÉES DE SECOURS ---
-        // Utilisée si le lien ci-dessus ne fonctionne pas. (Reconstruits fidèlement)
+        // ============================================================================
+        // 2. CONFIGURATION DES BASES DE DONNÉES PAR ELO
+        // Vous pouvez maintenant mettre des liens vers des fichiers .csv directement !
+        // ============================================================================
+        const ELO_CATEGORIES = [400, 900, 1400, 1900, 2400];
+        const ELO_URLS = {
+            400: "https://dwirgow.github.io/Tac-Tic-Chess/400-900-5000_problemes_aleatoires.csv",
+            900: "https://dwirgow.github.io/Tac-Tic-Chess/900-1400-5000_problemes_aleatoires.csv",
+            1400: "https://dwirgow.github.io/Tac-Tic-Chess/1400-1900-5000_problemes_aleatoires.csv",
+            1900: "https://dwirgow.github.io/Tac-Tic-Chess/1900-2400-5000_problemes_aleatoires.csv",
+        };
+
         const FALLBACK_DB = [
-          { id: "W1", color: "w", elo: 1200, fen: "r1b2rk1/pp3ppp/2n5/8/2B1Q3/1P6/P1P2PPP/R1B3K1 b - - 0 1", moves: ["b7b6", "c4f7", "f8f7", "e4e8", "f7f8", "e8f8"], explanation: "Attaque double : sacrifice du Fou pour dévier la Tour et mater." },
-          { id: "B1", color: "b", elo: 1542, fen: "6k1/5p1p/4p3/4q3/3nN3/2Q3P1/PP3P1P/6K1 w - - 2 37", moves: ["e4d2", "d4e2", "g1f1", "e2c3"], explanation: "Fourchette Royale en finale : Le cavalier noir saute en e2." },
-          { id: "W2", color: "w", elo: 2205, fen: "r1b1kb1r/pppp1ppp/2n1p3/3nN3/3P2q1/4B3/PPP1BPPP/RN1Q1RK1 b kq - 9 8", moves: ["d5e3", "f2e3", "g4g5", "e5f7", "g5e3", "g1h1"], explanation: "Attaque à la découverte et fourchette royale." },
-          { id: "B2", color: "b", elo: 1980, fen: "6k1/p4pp1/7p/3p4/P1rP4/4P3/1p3PPP/1R4K1 w - - 0 31", moves: ["b1b2", "c4c1"], explanation: "Mat du couloir immédiat après une prise de pion trop gourmande." },
-          { id: "W3", color: "w", elo: 2861, fen: "r4r2/1p3pkp/p5p1/3R1N1Q/3P4/8/P1q2P2/3R2K1 b - - 3 25", moves: ["g6f5", "d5c5", "c2e4", "h5g5", "g7h8", "g5f6"], explanation: "Séquence magistrale : La Tour blanche enferme la Dame noire." },
-          { id: "B3", color: "b", elo: 1450, fen: "1k6/1p3ppp/p7/8/8/5P2/PP1r2PP/4R1K1 w - - 0 25", moves: ["e1e8", "b8a7", "e8e7", "d2b2", "e7f7"], explanation: "Contre-attaque : La Tour blanche force le Roi noir à se déplacer." },
-          { id: "W4", color: "w", elo: 2400, fen: "q3r1k1/5p1p/p2p2p1/1pnN4/3QP3/5P2/PP4PP/2R3K1 b - - 0 26", moves: ["c5e6", "d5f6", "g8f8", "d4d6", "e8e7", "f6d5"], explanation: "Puissante centralisation du Cavalier menant à une attaque." },
-          { id: "B4", color: "b", elo: 1850, fen: "3r2k1/p4ppp/1p2p3/8/2P1n3/1P3N2/P4PPP/R5K1 w - - 0 20", moves: ["a1e1", "e4c3", "a2a3", "c3a2"], explanation: "Infiltration du cavalier sur les cases faibles." },
-          { id: "W5", color: "w", elo: 1750, fen: "r1bq1rk1/1pp2ppp/p1np4/4p1N1/2B1P1n1/2NPP2P/PPP3P1/R2Q1RK1 b - - 0 1", moves: ["h7h6", "g5f7", "f8f7", "c4f7"], explanation: "Exploitation du clouage par le Cavalier sur f7." },
-          { id: "B5", color: "b", elo: 1700, fen: "2r3k1/1p1q1ppp/p2p1b2/3P4/5B2/1P3Q2/P4PPP/4R1K1 w - - 1 22", moves: ["h2h3", "c8c3", "e1e3", "c3c1"], explanation: "Prise de contrôle de la colonne ouverte." },
-          { id: "W6", color: "w", elo: 1650, fen: "r1bq1rk1/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R b KQ - 5 6", moves: ["f6e4", "c3e4", "d7d5", "c4d3"], explanation: "Récupération matérielle au centre de l'échiquier." },
-          { id: "B6", color: "b", elo: 1600, fen: "r1bq1rk1/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R w KQ - 5 6", moves: ["c3d5", "f6e4", "d1e2", "e4f6"], explanation: "Prise centrale gratuite après une imprécision." },
-          { id: "W7", color: "w", elo: 2100, fen: "8/8/4k1p1/2KpP2p/5PP1/8/8/8 b - - 0 52", moves: ["h5g4", "f4f5", "e6e5", "f5f6"], explanation: "Course de pions : Sacrifice pour forcer la promotion." },
-          { id: "B7", color: "b", elo: 1590, fen: "8/8/4k1p1/2KpP2p/5PP1/8/8/8 w - - 0 53", moves: ["g4h5", "g6h5", "f4f5", "e6e5"], explanation: "Finale de pions : Consolidation de la chaîne de pions." },
-          { id: "W8", color: "w", elo: 1950, fen: "r2q1rk1/ppp2ppp/2n1b3/3pP3/3Pn3/1B3N2/PP1N1PPP/R2Q1RK1 b - - 2 11", moves: ["f7f6", "d2e4", "d5e4", "b3e6"], explanation: "Exploitation de la faiblesse : attaque combinée au centre." }
+          { id: "W1", color: "w", elo: 1200, fen: "r1b2rk1/pp3ppp/2n5/8/2B1Q3/1P6/P1P2PPP/R1B3K1 b - - 0 1", moves: ["b7b6", "c4f7", "f8f7", "e4e8", "f7f8", "e8f8"], explanation: "Secours: Attaque double." },
+          { id: "B1", color: "b", elo: 1542, fen: "6k1/5p1p/4p3/4q3/3nN3/2Q3P1/PP3P1P/6K1 w - - 2 37", moves: ["e4d2", "d4e2", "g1f1", "e2c3"], explanation: "Secours: Fourchette Royale." },
+          { id: "W2", color: "w", elo: 2205, fen: "r1b1kb1r/pppp1ppp/2n1p3/3nN3/3P2q1/4B3/PPP1BPPP/RN1Q1RK1 b kq - 9 8", moves: ["d5e3", "f2e3", "g4g5", "e5f7", "g5e3", "g1h1"], explanation: "Secours: Attaque à la découverte." },
+          { id: "B2", color: "b", elo: 1980, fen: "6k1/p4pp1/7p/3p4/P1rP4/4P3/1p3PPP/1R4K1 w - - 0 31", moves: ["b1b2", "c4c1"], explanation: "Secours: Mat du couloir." },
+          { id: "W3", color: "w", elo: 2861, fen: "r4r2/1p3pkp/p5p1/3R1N1Q/3P4/8/P1q2P2/3R2K1 b - - 3 25", moves: ["g6f5", "d5c5", "c2e4", "h5g5", "g7h8", "g5f6"], explanation: "Secours: Séquence magistrale." }
         ];
 
-        // --- UTILITAIRES ---
         const posToAlgebraic = (r, c) => String.fromCharCode(97 + c) + (8 - r);
         const algebraicToPos = (alg) => ({ r: 8 - parseInt(alg[1]), c: alg.charCodeAt(0) - 97 });
         const toDateString = (dateObj) => {
@@ -83,64 +92,59 @@
           return `${year}-${month}-${day}`;
         };
 
+        const formatTime = (secs) => {
+            if (secs === 'NA') return 'NA';
+            if (secs == null) return '--:--';
+            
+            let isPracticeNA = false;
+            let timeVal = secs;
+            
+            if (typeof secs === 'string' && secs.includes('_NA')) {
+                isPracticeNA = true;
+                timeVal = parseInt(secs.split('_')[0], 10);
+            }
+
+            const m = Math.floor(timeVal / 60).toString();
+            const s = (timeVal % 60).toString().padStart(2, '0');
+            return isPracticeNA ? `${m}:${s} (NA)` : `${m}:${s}`;
+        };
+
+        const getScoreStats = (timesArray) => {
+            const solvedCount = timesArray.filter(t => typeof t === 'number').length;
+            const totalTime = timesArray.reduce((sum, t) => (typeof t === 'number' ? sum + t : sum), 0);
+            return { solvedCount, totalTime };
+        };
+
         const PIECE_URLS = {
-          'P': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
-          'N': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
-          'B': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
-          'R': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
-          'Q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
-          'K': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
-          'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
-          'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
-          'b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
-          'r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
-          'q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
-          'k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+          'P': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg', 'N': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+          'B': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg', 'R': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+          'Q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg', 'K': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+          'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg', 'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+          'b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg', 'r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+          'q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg', 'k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
         };
 
         const IconArrowLeft = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>;
         const IconArrowRight = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
         const IconPlay = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
-        const IconTrophy = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
+        const IconTrophy = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
+        const IconUser = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
 
         function App() {
-          const [isChessLoaded, setIsChessLoaded] = useState(false);
-          const [puzzleDatabase, setPuzzleDatabase] = useState([]);
-          const [isLoadingDB, setIsLoadingDB] = useState(true);
+          const [isResourcesLoaded, setIsResourcesLoaded] = useState(false);
+          const [isLoadingDB, setIsLoadingDB] = useState(false);
           
-          useEffect(() => {
-            const initResources = async () => {
-                // 1. Chargement de Chess.js
-                if (!window.Chess) {
-                    const script = document.createElement('script');
-                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js';
-                    script.onload = () => setIsChessLoaded(true);
-                    document.head.appendChild(script);
-                } else {
-                    setIsChessLoaded(true);
-                }
+          const [databases, setDatabases] = useState({ 400: [], 900: [], 1400: [], 1900: [], 2400: [] });
+          const [selectedElo, setSelectedElo] = useState(1400); 
+          
+          const [fbDb, setFbDb] = useState(null);
+          const [fbUser, setFbUser] = useState(null);
+          const [leaderboard, setLeaderboard] = useState([]);
+          const [isFetchingLb, setIsFetchingLb] = useState(false);
 
-                // 2. TENTATIVE DE RÉCUPÉRATION EXTERNE (La fonction pour "piocher" en ligne)
-                try {
-                    const response = await fetch(EXTERNAL_PUZZLES_URL);
-                    if (!response.ok) throw new Error("Impossible de joindre la base externe.");
-                    const data = await response.json();
-                    if (Array.isArray(data) && data.length > 0 && data[0].fen) {
-                        setPuzzleDatabase(data);
-                    } else {
-                        throw new Error("Format de la base de données incorrect.");
-                    }
-                } catch (error) {
-                    // Si l'URL échoue, on bascule sur la base interne de manière invisible pour l'utilisateur
-                    setPuzzleDatabase(FALLBACK_DB); 
-                } finally {
-                    setIsLoadingDB(false);
-                }
-            };
-            initResources();
-          }, []);
+          const [username, setUsername] = useState(localStorage.getItem('tactic_username') || `Joueur${Math.floor(Math.random()*10000)}`);
+          const [isEditingUsername, setIsEditingUsername] = useState(false);
 
-          // États Globaux
           const [view, setView] = useState('home');
           const [selectedDate, setSelectedDate] = useState(toDateString(new Date()));
           const [weekOffset, setWeekOffset] = useState(0); 
@@ -169,15 +173,129 @@
           const activeDrag = useRef(null);
           const [ghostPiece, setGhostPiece] = useState(null);
 
+          const getHistoryKey = (date, elo) => `${date}_${elo}`;
+
           useEffect(() => {
-            const saved = localStorage.getItem('chessDaily_history');
+            const initApp = async () => {
+                if (!window.Chess) {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js';
+                    document.head.appendChild(script);
+                    await new Promise(r => script.onload = r);
+                }
+
+                let database = null;
+                const checkFirebase = setInterval(async () => {
+                    if (window.FirebaseLib) {
+                        clearInterval(checkFirebase);
+                        try {
+                            let finalConfig = monFirebaseConfig;
+                            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                                finalConfig = JSON.parse(__firebase_config);
+                            }
+                            const app = window.FirebaseLib.initializeApp(finalConfig);
+                            const auth = window.FirebaseLib.getAuth(app);
+                            database = window.FirebaseLib.getFirestore(app);
+                            setFbDb(database);
+
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await window.FirebaseLib.signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await window.FirebaseLib.signInAnonymously(auth);
+                            }
+
+                            window.FirebaseLib.onAuthStateChanged(auth, (user) => setFbUser(user));
+                        } catch(err) {
+                            console.error("Erreur Firebase.", err);
+                        }
+                        setIsResourcesLoaded(true);
+                    }
+                }, 100);
+            };
+            initApp();
+
+            const saved = localStorage.getItem('chessDaily_history_elo');
             if (saved) setHistory(JSON.parse(saved));
           }, []);
 
-          // Pioche séquentiellement 5 problèmes en fonction de la date, sans jamais les répéter.
+          // ==================================================================
+          // CHARGEMENT DYNAMIQUE AVEC SUPPORT DU FORMAT CSV DE LICHESS
+          // ==================================================================
+          useEffect(() => {
+              const fetchEloDatabase = async () => {
+                  if (databases[selectedElo].length > 0) return; 
+                  
+                  setIsLoadingDB(true);
+                  try {
+                      const response = await fetch(ELO_URLS[selectedElo]);
+                      if (!response.ok) throw new Error("Fichier introuvable sur GitHub");
+                      
+                      const textData = await response.text();
+                      let parsedData = null;
+
+                      // 1. On essaye d'abord de lire le fichier comme un JSON classique
+                      try {
+                          parsedData = JSON.parse(textData);
+                      } catch (e) {
+                          // 2. Si ça plante, c'est que c'est un CSV ! On le parse manuellement.
+                          // On utilise replace(/\r/g, '') pour nettoyer les sauts de ligne Windows invisibles
+                          const lines = textData.replace(/\r/g, '').trim().split('\n');
+                          const headers = lines[0].split(',');
+                          
+                          const idIdx = headers.indexOf('PuzzleId');
+                          const fenIdx = headers.indexOf('FEN');
+                          const movesIdx = headers.indexOf('Moves');
+                          const ratingIdx = headers.indexOf('Rating');
+
+                          if (idIdx > -1 && fenIdx > -1 && movesIdx > -1) {
+                              parsedData = [];
+                              // On saute la ligne 0 (les headers)
+                              for (let i = 1; i < lines.length; i++) {
+                                  const cols = lines[i].split(',');
+                                  if (cols.length >= 4) {
+                                      const fen = cols[fenIdx];
+                                      // Règle Lichess : FEN = position juste AVANT le coup adverse
+                                      // Si ' b ' (aux noirs de jouer l'erreur), le joueur jouera les Blancs ('w')
+                                      const color = fen.includes(' b ') ? 'w' : 'b';
+                                      
+                                      parsedData.push({
+                                          id: cols[idIdx],
+                                          elo: parseInt(cols[ratingIdx]),
+                                          fen: fen,
+                                          moves: cols[movesIdx].split(' '),
+                                          explanation: `Lichess #${cols[idIdx]} | ~${cols[ratingIdx]} Elo`,
+                                          color: color
+                                      });
+                                  }
+                              }
+                          }
+                      }
+                      
+                      if (Array.isArray(parsedData) && parsedData.length > 0 && parsedData[0].fen) {
+                          setDatabases(prev => ({...prev, [selectedElo]: parsedData}));
+                      } else {
+                          throw new Error("Format de données invalide");
+                      }
+                  } catch (e) {
+                      console.warn(`Impossible de charger la DB Elo ${selectedElo}, utilisation du secours. Erreur:`, e);
+                      // Afficher une petite alerte visuelle pour vous prévenir que ça a échoué (vous pourrez l'enlever plus tard)
+                      alert(`Attention: Impossible de charger le fichier pour l'Elo ${selectedElo}. Vérifiez le nom du fichier !`);
+                      setDatabases(prev => ({...prev, [selectedElo]: FALLBACK_DB})); 
+                  } finally {
+                      setIsLoadingDB(false);
+                  }
+              };
+
+              if (isResourcesLoaded) fetchEloDatabase();
+          }, [selectedElo, isResourcesLoaded]);
+
+          const handleUsernameChange = (e) => {
+              setUsername(e.target.value);
+              localStorage.setItem('tactic_username', e.target.value);
+          };
+
           const generatePuzzlesForDate = (dateStr, db) => {
             if (!db || db.length === 0) return [];
-            
             const epoch = new Date('2024-01-01T12:00:00Z').getTime();
             const targetDate = new Date(dateStr + 'T12:00:00Z').getTime();
             const daysPassed = Math.floor((targetDate - epoch) / (1000 * 60 * 60 * 24));
@@ -191,25 +309,21 @@
           };
 
           useEffect(() => {
-            if (puzzleDatabase.length > 0) {
-              setDailyPuzzles(generatePuzzlesForDate(selectedDate, puzzleDatabase));
-              if (history[selectedDate]) {
-                setPuzzleTimes(history[selectedDate].times);
-              } else {
-                setPuzzleTimes([null, null, null, null, null]);
-              }
+            const currentDb = databases[selectedElo];
+            if (currentDb && currentDb.length > 0) {
+              setDailyPuzzles(generatePuzzlesForDate(selectedDate, currentDb));
+              const hKey = getHistoryKey(selectedDate, selectedElo);
+              if (history[hKey]) setPuzzleTimes(history[hKey].times);
+              else setPuzzleTimes([null, null, null, null, null]);
             }
-          }, [selectedDate, history, puzzleDatabase]);
+          }, [selectedDate, selectedElo, history, databases]);
 
           useEffect(() => {
             let interval;
             if (view === 'playing' && !isPaused && globalTime > 0) {
               interval = setInterval(() => {
                 setGlobalTime(prev => {
-                  if (prev <= 1) {
-                    handleTimeOut();
-                    return 0;
-                  }
+                  if (prev <= 1) { handleTimeOut(); return 0; }
                   return prev - 1;
                 });
                 setCurrentPuzzleTime(prev => prev + 1);
@@ -223,13 +337,52 @@
             setPuzzleState('failed');
             setPuzzleTimes(prev => {
               const newTimes = [...prev];
-              for (let i = currentPuzzleIdx; i < 5; i++) {
-                if (newTimes[i] === null) newTimes[i] = 'NA';
+              if (!isPracticeMode) {
+                  for (let i = currentPuzzleIdx; i < 5; i++) if (newTimes[i] === null) newTimes[i] = 'NA';
               }
               return newTimes;
             });
             setTimeout(() => finishDaily(), 2000);
           };
+
+          const fetchLeaderboard = () => {
+            if (!fbDb || !fbUser) return;
+            setIsFetchingLb(true);
+            
+            const { collection, onSnapshot } = window.FirebaseLib;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'tacticchess';
+            const colRef = collection(fbDb, 'artifacts', appId, 'public', 'data', 'scores');
+            
+            const unsubscribe = onSnapshot(colRef, (snapshot) => {
+                const allDocs = snapshot.docs.map(d => d.data());
+                const dayScores = allDocs.filter(s => s.date === selectedDate && s.elo === selectedElo);
+                
+                dayScores.sort((a, b) => {
+                    const statsA = getScoreStats(a.times);
+                    const statsB = getScoreStats(b.times);
+
+                    if (statsA.solvedCount !== statsB.solvedCount) {
+                        return statsB.solvedCount - statsA.solvedCount; 
+                    }
+                    return statsA.totalTime - statsB.totalTime; 
+                });
+                
+                setLeaderboard(dayScores);
+                setIsFetchingLb(false);
+            }, (error) => {
+                console.error("Erreur récupération classement", error);
+                setIsFetchingLb(false);
+            });
+            
+            return unsubscribe;
+          };
+
+          useEffect(() => {
+              let unsub;
+              if (view === 'leaderboard') unsub = fetchLeaderboard();
+              return () => { if (unsub) unsub(); }
+          }, [view, selectedDate, selectedElo, fbUser]);
+
 
           const initPuzzle = (idx) => {
             const puz = dailyPuzzles[idx];
@@ -250,14 +403,9 @@
             setIsPaused(true); 
             setIsAnimating(true);
 
-            // L'ordinateur joue l'erreur
             initialMoveTimeout.current = setTimeout(() => {
               const firstMoveUci = puz.moves[0];
-              newGame.move({
-                from: firstMoveUci.substring(0, 2),
-                to: firstMoveUci.substring(2, 4),
-                promotion: firstMoveUci.length === 5 ? firstMoveUci[4] : 'q'
-              });
+              newGame.move({ from: firstMoveUci.substring(0, 2), to: firstMoveUci.substring(2, 4), promotion: firstMoveUci.length === 5 ? firstMoveUci[4] : 'q' });
               setCurrentFen(newGame.fen());
               setHistoryIndex(1);
               setMaxHistoryIndex(1);
@@ -268,23 +416,20 @@
 
           const startPlayingPhase = (forcePractice = false) => {
             setIsPracticeMode(forcePractice);
-            const oldHistoryDay = history[selectedDate];
+            const hKey = getHistoryKey(selectedDate, selectedElo);
+            const oldHistoryDay = history[hKey];
             let initialTimes = [null, null, null, null, null];
 
-            if (oldHistoryDay && !forcePractice) {
-               initialTimes = [...oldHistoryDay.times];
-            }
+            if (oldHistoryDay) initialTimes = [...oldHistoryDay.times];
             setPuzzleTimes(initialTimes);
 
             let firstUnsolved = 0;
             if (!forcePractice) {
                 for(let i = 0; i < 5; i++) {
-                   if (typeof initialTimes[i] !== 'number') {
-                      firstUnsolved = i;
-                      break;
-                   }
+                   if (initialTimes[i] === null) { firstUnsolved = i; break; }
                 }
             }
+            
             setGlobalTime(300);
             setView('playing');
             initPuzzle(firstUnsolved);
@@ -294,54 +439,40 @@
             setIsPaused(true);
             setIsAnimating(true);
             setPuzzleState('failed');
-            setPuzzleTimes(prev => {
-              const newTimes = [...prev];
-              newTimes[currentPuzzleIdx] = 'NA';
-              return newTimes;
+            
+            setPuzzleTimes(prev => { 
+                const newTimes = [...prev]; 
+                if (!isPracticeMode) {
+                    newTimes[currentPuzzleIdx] = 'NA'; 
+                }
+                return newTimes; 
             });
 
             const startAnimation = () => {
-              if (didMakeWrongMove) {
-                game.undo(); 
-                setCurrentFen(game.fen());
-              }
-
+              if (didMakeWrongMove) { game.undo(); setCurrentFen(game.fen()); }
               let tempIndex = historyIndex;
               const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
 
               const playNext = () => {
                 if (tempIndex >= currentPuzzle.moves.length) {
                   setHistoryIndex(tempIndex);
-                  initialMoveTimeout.current = setTimeout(() => {
-                    setFlipped(true);
-                    setIsAnimating(false);
-                  }, 600);
+                  initialMoveTimeout.current = setTimeout(() => { setFlipped(true); setIsAnimating(false); }, 600);
                   return;
                 }
                 const nextUci = currentPuzzle.moves[tempIndex];
-                game.move({
-                  from: nextUci.substring(0, 2),
-                  to: nextUci.substring(2, 4),
-                  promotion: nextUci.length === 5 ? nextUci[4] : 'q'
-                });
+                game.move({ from: nextUci.substring(0, 2), to: nextUci.substring(2, 4), promotion: nextUci.length === 5 ? nextUci[4] : 'q' });
                 setCurrentFen(game.fen());
                 tempIndex++;
                 setHistoryIndex(tempIndex);
                 initialMoveTimeout.current = setTimeout(playNext, 500);
               };
 
-              if (didMakeWrongMove) {
-                initialMoveTimeout.current = setTimeout(playNext, 500);
-              } else {
-                playNext();
-              }
+              if (didMakeWrongMove) initialMoveTimeout.current = setTimeout(playNext, 500);
+              else playNext();
             };
 
-            if (didMakeWrongMove) {
-              initialMoveTimeout.current = setTimeout(startAnimation, 800);
-            } else {
-              startAnimation();
-            }
+            if (didMakeWrongMove) initialMoveTimeout.current = setTimeout(startAnimation, 800);
+            else startAnimation();
           };
 
           const processMove = (fromR, fromC, toR, toC) => {
@@ -352,10 +483,7 @@
             const expectedUci = currentPuzzle.moves[historyIndex];
 
             const moveAttempt = game.move({ from: fromAlg, to: toAlg, promotion: 'q' });
-            if (moveAttempt === null) {
-              setSelectedSquare(null);
-              return;
-            }
+            if (moveAttempt === null) { setSelectedSquare(null); return; }
 
             if (fromAlg === expectedUci.substring(0, 2) && toAlg === expectedUci.substring(2, 4)) {
               setCurrentFen(game.fen());
@@ -370,21 +498,13 @@
                 setIsAnimating(true);
                 setTimeout(() => {
                   const oppUci = currentPuzzle.moves[historyIndex + 1];
-                  game.move({
-                    from: oppUci.substring(0, 2),
-                    to: oppUci.substring(2, 4),
-                    promotion: oppUci.length === 5 ? oppUci[4] : 'q'
-                  });
+                  game.move({ from: oppUci.substring(0, 2), to: oppUci.substring(2, 4), promotion: oppUci.length === 5 ? oppUci[4] : 'q' });
                   setCurrentFen(game.fen());
                   setHistoryIndex(prev => prev + 1);
                   setMaxHistoryIndex(prev => prev + 1);
                   
-                  if (historyIndex + 2 === currentPuzzle.moves.length) {
-                    handlePuzzleEnd('solved');
-                  } else {
-                    setIsPaused(false);
-                    setIsAnimating(false);
-                  }
+                  if (historyIndex + 2 === currentPuzzle.moves.length) handlePuzzleEnd('solved');
+                  else { setIsPaused(false); setIsAnimating(false); }
                 }, 500);
               }
             } else {
@@ -397,11 +517,7 @@
           const handlePointerDown = (e, r, c) => {
             if (e.button !== undefined && e.button !== 0) return;
             if (puzzleState !== 'playing' || isPaused || isAnimating || !game) return;
-
-            if (historyIndex !== maxHistoryIndex) {
-              navigateHistory(maxHistoryIndex - historyIndex);
-              return;
-            }
+            if (historyIndex !== maxHistoryIndex) { navigateHistory(maxHistoryIndex - historyIndex); return; }
 
             const alg = posToAlgebraic(r, c);
             const piece = game.get(alg);
@@ -431,9 +547,7 @@
 
             if (activeDrag.current.isDragging) {
               let charMap = null;
-              if (activeDrag.current.piece) {
-                 charMap = activeDrag.current.piece.color === 'w' ? activeDrag.current.piece.type.toUpperCase() : activeDrag.current.piece.type;
-              }
+              if (activeDrag.current.piece) charMap = activeDrag.current.piece.color === 'w' ? activeDrag.current.piece.type.toUpperCase() : activeDrag.current.piece.type;
               setGhostPiece({ piece: charMap, originR: activeDrag.current.r, originC: activeDrag.current.c, x: e.clientX, y: e.clientY });
             }
           };
@@ -464,11 +578,33 @@
           const handlePuzzleEnd = (status) => {
             setIsPaused(true);
             setPuzzleState(status);
+            
             setPuzzleTimes(prev => {
               const newTimes = [...prev];
-              newTimes[currentPuzzleIdx] = status === 'solved' ? currentPuzzleTime : 'NA';
+              const oldVal = newTimes[currentPuzzleIdx];
+
+              if (status === 'solved') {
+                  if (isPracticeMode) {
+                      if (oldVal === 'NA' || (typeof oldVal === 'string' && oldVal.includes('_NA'))) {
+                          const prevTime = typeof oldVal === 'string' ? parseInt(oldVal.split('_')[0], 10) : Infinity;
+                          newTimes[currentPuzzleIdx] = `${Math.min(currentPuzzleTime, prevTime)}_NA`;
+                      } else if (typeof oldVal === 'number') {
+                          newTimes[currentPuzzleIdx] = Math.min(currentPuzzleTime, oldVal);
+                      } else {
+                          newTimes[currentPuzzleIdx] = currentPuzzleTime;
+                      }
+                  } else {
+                      newTimes[currentPuzzleIdx] = currentPuzzleTime;
+                  }
+              } else {
+                  if (!isPracticeMode) {
+                      newTimes[currentPuzzleIdx] = 'NA';
+                  }
+              }
+              
               return newTimes;
             });
+
             if (status === 'solved') {
               setIsAnimating(true);
               initialMoveTimeout.current = setTimeout(() => { setFlipped(true); setIsAnimating(false); }, 600);
@@ -480,37 +616,67 @@
             animateSolutionAndFail(false);
           };
 
+          const prevPuzzle = () => {
+            if (currentPuzzleIdx > 0) {
+                initPuzzle(currentPuzzleIdx - 1);
+            }
+          };
+
           const nextPuzzle = () => {
             let nextIdx = currentPuzzleIdx + 1;
             if (!isPracticeMode) {
-                while(nextIdx < 5 && typeof puzzleTimes[nextIdx] === 'number') nextIdx++;
+                while(nextIdx < 5 && puzzleTimes[nextIdx] !== null) nextIdx++;
             }
             if (nextIdx < 5) initPuzzle(nextIdx);
             else finishDaily();
           };
 
-          const finishDaily = (goToHome = false) => {
+          const saveScoreToFirebase = async (mergedTimes) => {
+              if (!fbUser || !fbDb || !window.FirebaseLib) return;
+              
+              const isPerfect = mergedTimes.every(t => typeof t === 'number');
+              
+              try {
+                  const { doc, setDoc } = window.FirebaseLib;
+                  const appId = typeof __app_id !== 'undefined' ? __app_id : 'tacticchess';
+                  const docRef = doc(fbDb, 'artifacts', appId, 'public', 'data', 'scores', `${selectedDate}_${selectedElo}_${fbUser.uid}`);
+                  
+                  await setDoc(docRef, {
+                      date: selectedDate,
+                      elo: selectedElo,
+                      userId: fbUser.uid,
+                      username: username || "Joueur Anonyme",
+                      times: mergedTimes,
+                      isPerfect: isPerfect,
+                      timestamp: Date.now()
+                  });
+              } catch (e) {
+                  console.error("Erreur lors de la sauvegarde Firebase :", e);
+              }
+          };
+
+          const finishDaily = async (goToHome = false) => {
             if (goToHome) setView('home');
             else setView('summary');
 
-            setPuzzleTimes(currentTimes => {
-              const oldHistoryDay = history[selectedDate];
-              const oldTimes = oldHistoryDay ? oldHistoryDay.times : Array(5).fill(null);
-              const mergedTimes = currentTimes.map((t, i) => {
-                if (typeof oldTimes[i] === 'number') {
-                  if (typeof t === 'number') return Math.min(t, oldTimes[i]); 
-                  return oldTimes[i];
-                }
-                return t !== null ? t : oldTimes[i];
-              });
+            const hKey = getHistoryKey(selectedDate, selectedElo);
+            const oldHistoryDay = history[hKey];
+            
+            const mergedTimes = [...puzzleTimes];
 
-              if (!isPracticeMode) {
-                const newHistory = { ...history, [selectedDate]: { times: mergedTimes, timestamp: Date.now() } };
+            if (!isPracticeMode) {
+                const officialTimes = [...mergedTimes];
+                const newHistory = { ...history, [hKey]: { times: mergedTimes, officialTimes: officialTimes, timestamp: Date.now() } };
                 setHistory(newHistory);
-                localStorage.setItem('chessDaily_history', JSON.stringify(newHistory));
-              }
-              return mergedTimes;
-            });
+                localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
+                
+                await saveScoreToFirebase(officialTimes);
+            } else {
+                const officialTimes = oldHistoryDay ? (oldHistoryDay.officialTimes || oldHistoryDay.times) : mergedTimes;
+                const newHistory = { ...history, [hKey]: { times: mergedTimes, officialTimes: officialTimes, timestamp: Date.now() } };
+                setHistory(newHistory);
+                localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
+            }
           };
 
           const navigateHistory = (dir) => {
@@ -531,15 +697,7 @@
             setCurrentFen(newGame.fen());
           };
 
-          const formatTime = (secs) => {
-            if (secs === 'NA') return 'NA';
-            if (secs == null) return '--:--';
-            const m = Math.floor(secs / 60).toString().padStart(2, '0');
-            const s = (secs % 60).toString().padStart(2, '0');
-            return `${m}:${s}`;
-          };
-
-          if (!isChessLoaded || isLoadingDB) {
+          if (!isResourcesLoaded) {
             return (
               <div className="flex flex-col items-center justify-center h-screen bg-slate-900 text-amber-400 font-bold space-y-4">
                 <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
@@ -549,12 +707,23 @@
           }
 
           const renderHome = () => {
-            const historyDay = history[selectedDate];
-            const isPlayed = historyDay !== undefined;
-            const isPerfect = isPlayed && historyDay.times.every(t => typeof t === 'number');
+            const hKey = getHistoryKey(selectedDate, selectedElo);
+            const historyDay = history[hKey];
+            
+            const isStarted = historyDay !== undefined;
+            const offTimes = historyDay ? (historyDay.officialTimes || historyDay.times) : [];
+            const isCompleted = isStarted && offTimes.every(t => t !== null);
+            const isPerfect = isCompleted && offTimes.every(t => typeof t === 'number');
 
-            const totalAttempted = Object.values(history).reduce((acc, day) => acc + day.times.filter(t => t !== null).length, 0);
-            const totalSolved = Object.values(history).reduce((acc, day) => acc + day.times.filter(t => typeof t === 'number').length, 0);
+            const allKeysThisElo = Object.keys(history).filter(k => k.endsWith(`_${selectedElo}`));
+            const totalAttempted = allKeysThisElo.reduce((acc, k) => {
+                const off = history[k].officialTimes || history[k].times;
+                return acc + off.filter(t => t !== null).length;
+            }, 0);
+            const totalSolved = allKeysThisElo.reduce((acc, k) => {
+                const off = history[k].officialTimes || history[k].times;
+                return acc + off.filter(t => typeof t === 'number').length;
+            }, 0);
 
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -578,9 +747,37 @@
             if (weekOffset > 0) weekLabel = `Semaine N+${weekOffset}`;
 
             return (
-              <div className="flex flex-col items-center p-4 sm:p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto">
-                <h1 className="text-3xl font-bold text-center mt-4 sm:mt-8 text-amber-400">Tac-Tic Chess</h1>
+              <div className="flex flex-col items-center p-4 sm:p-6 space-y-5 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto pb-20">
+                <h1 className="text-4xl font-black text-center mt-4 sm:mt-6 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
                 
+                <div className="w-full bg-slate-800 p-3 rounded-xl border border-slate-700 flex justify-between items-center shadow-md">
+                    <div className="flex items-center gap-2 text-slate-300">
+                        <IconUser />
+                        {isEditingUsername ? (
+                            <input type="text" value={username} onChange={handleUsernameChange} onBlur={() => setIsEditingUsername(false)} autoFocus className="bg-slate-900 text-amber-400 font-bold px-2 py-1 rounded outline-none w-32" />
+                        ) : (
+                            <span className="font-bold text-amber-400 cursor-pointer hover:text-amber-300" onClick={() => setIsEditingUsername(true)}>
+                                {username} <span className="text-xs text-slate-500 font-normal ml-1">✏️ modifier</span>
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                <div className="w-full">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Difficulté (Elo)</h3>
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                        {ELO_CATEGORIES.map(elo => (
+                            <button 
+                                key={elo} 
+                                onClick={() => setSelectedElo(elo)}
+                                className={`flex-1 min-w-[60px] py-2 rounded-lg font-bold text-sm transition ${selectedElo === elo ? 'bg-amber-500 text-slate-900 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                            >
+                                {elo}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
                 <div className="w-full flex flex-col bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 gap-4">
                   <div className="w-full flex justify-between items-center px-2">
                      <button onClick={() => setWeekOffset(w => w - 1)} className="p-1 hover:bg-slate-700 rounded-lg text-slate-400 transition"><IconArrowLeft size={20}/></button>
@@ -596,19 +793,24 @@
                   
                   <div className="flex justify-between w-full">
                     {weekDays.map((day) => {
-                       const histDay = history[day.dateStr];
-                       const dayIsPlayed = histDay !== undefined;
-                       const dayIsPerfect = dayIsPlayed && histDay.times.every(t => t !== 'NA' && t !== null);
+                       const loopHKey = getHistoryKey(day.dateStr, selectedElo);
+                       const loopHistDay = history[loopHKey];
+                       const loopDayIsStarted = loopHistDay !== undefined;
+                       
+                       const loopOffTimes = loopHistDay ? (loopHistDay.officialTimes || loopHistDay.times) : [];
+                       const loopDayIsCompleted = loopDayIsStarted && loopOffTimes.every(t => t !== null);
+                       const loopDayIsPerfect = loopDayIsCompleted && loopOffTimes.every(t => typeof t === 'number');
                        const isSelected = selectedDate === day.dateStr;
                        
                        let baseClass = "w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ";
                        
                        if (day.isFuture) baseClass += "bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700/50";
-                       else if (dayIsPlayed) {
-                         if (dayIsPerfect) baseClass += "bg-emerald-500 text-white shadow-[0_0_8px_rgba(16,185,129,0.5)] cursor-pointer";
+                       else if (loopDayIsCompleted) {
+                         if (loopDayIsPerfect) baseClass += "bg-emerald-500 text-white shadow-[0_0_8px_rgba(16,185,129,0.5)] cursor-pointer";
                          else baseClass += "bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.5)] cursor-pointer";
                        } 
-                       else if (day.isToday) baseClass += "bg-amber-500 text-white shadow-[0_0_8px_rgba(245,158,11,0.5)] cursor-pointer";
+                       else if (loopDayIsStarted) baseClass += "bg-amber-500 text-white shadow-[0_0_8px_rgba(245,158,11,0.5)] cursor-pointer";
+                       else if (day.isToday) baseClass += "bg-slate-600 text-slate-200 shadow-[0_0_8px_rgba(148,163,184,0.5)] cursor-pointer";
                        else baseClass += "bg-slate-700 text-slate-300 hover:bg-slate-600 cursor-pointer";
 
                        if (isSelected) baseClass += " ring-2 ring-white ring-offset-2 ring-offset-slate-800";
@@ -623,38 +825,60 @@
                 </div>
 
                 <div className="text-center space-y-4 w-full">
-                  <p className="text-slate-400 text-sm">5 problèmes d'échecs classés par difficulté croissante. Le chrono s'arrête à la moindre erreur. Montrez votre écran à vos amis pour comparer !</p>
-                  
-                  {isPlayed ? (
-                    <div className={`p-4 sm:p-6 rounded-xl border shadow-xl w-full relative overflow-hidden ${isPerfect ? 'bg-slate-800 border-emerald-600/50 shadow-emerald-900/20' : 'bg-slate-800 border-red-600/50 shadow-red-900/20'}`}>
-                      <div className={`absolute top-0 right-0 p-3 opacity-20 ${isPerfect ? 'text-emerald-400' : 'text-red-400'}`}><IconTrophy /></div>
-                      <h2 className={`text-xl font-bold mb-4 ${isPerfect ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {isPerfect ? "Entraînement réussi !" : "Entraînement à parfaire"}
+                  {isLoadingDB ? (
+                      <div className="flex justify-center p-6"><div className="w-8 h-8 border-4 border-amber-400 border-t-transparent rounded-full animate-spin"></div></div>
+                  ) : isStarted ? (
+                    <div className={`p-4 sm:p-6 rounded-xl border shadow-xl w-full relative overflow-hidden ${isPerfect ? 'bg-slate-800 border-emerald-600/50 shadow-emerald-900/20' : (isCompleted ? 'bg-slate-800 border-red-600/50 shadow-red-900/20' : 'bg-slate-800 border-amber-600/50 shadow-amber-900/20')}`}>
+                      <div className={`absolute top-0 right-0 p-3 opacity-20 ${isPerfect ? 'text-emerald-400' : (isCompleted ? 'text-red-400' : 'text-amber-400')}`}><IconTrophy /></div>
+                      <h2 className={`text-xl font-bold mb-4 ${isPerfect ? 'text-emerald-400' : (isCompleted ? 'text-red-400' : 'text-amber-400')}`}>
+                        {isPerfect ? "Score parfait !" : (isCompleted ? "Session terminée" : "Session en cours...")}
                       </h2>
                       <div className="flex justify-between sm:justify-center sm:space-x-4 mb-6">
-                        {historyDay.times.map((t, i) => (
-                          <div key={i} className="flex flex-col items-center">
-                            <span className="text-xs text-slate-400">P{i+1}</span>
-                            <span className={`text-base sm:text-xl font-mono font-bold ${t === 'NA' ? 'text-red-400' : 'text-emerald-300'}`}>{formatTime(t)}</span>
-                          </div>
-                        ))}
+                        {historyDay.times.map((t, i) => {
+                          const isPracticeSuccess = typeof t === 'string' && t.includes('_NA');
+                          let colorClass = 'text-emerald-300';
+                          if (t === 'NA') colorClass = 'text-red-400';
+                          else if (t === null) colorClass = 'text-slate-600';
+                          else if (isPracticeSuccess) colorClass = 'text-amber-400'; 
+
+                          return (
+                            <div key={i} className="flex flex-col items-center">
+                              <span className="text-xs text-slate-400">P{i+1}</span>
+                              <span className={`text-sm sm:text-lg font-mono font-bold ${colorClass}`}>
+                                {t === null ? '--' : formatTime(t)}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
-                      <button onClick={() => startPlayingPhase(isPerfect)} className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition flex justify-center items-center gap-2">
-                        <IconPlay /> {isPerfect ? "Rejouer pour le fun" : "Améliorer mon score"}
-                      </button>
+                      
+                      {isCompleted ? (
+                          <button onClick={() => startPlayingPhase(true)} className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition flex justify-center items-center gap-2">
+                            <IconPlay /> S'entraîner (Ne compte pas)
+                          </button>
+                      ) : (
+                          <button onClick={() => startPlayingPhase(false)} className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg transition flex justify-center items-center gap-2">
+                            <IconPlay /> Continuer la session
+                          </button>
+                      )}
                     </div>
                   ) : (
                     <button onClick={() => startPlayingPhase(false)} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-600/30 transition transform hover:-translate-y-1 flex justify-center items-center gap-2">
                       <IconPlay /> Démarrer les 5 Minutes
                     </button>
                   )}
+
+                  {/* BOUTON LEADERBOARD */}
+                  <button onClick={() => setView('leaderboard')} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition flex justify-center items-center gap-2 mt-4">
+                     🏆 Voir le Classement ({selectedElo} Elo)
+                  </button>
                 </div>
 
-                <div className="w-full mt-4 bg-slate-800 rounded-xl p-4 border border-slate-700 text-center">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Mes Stats Globales</h3>
+                <div className="w-full mt-2 bg-slate-800 rounded-xl p-4 border border-slate-700 text-center">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Stats Globale ({selectedElo} Elo)</h3>
                   <div className="flex justify-around items-center py-2">
                      <div>
-                        <div className="text-2xl font-bold text-amber-400">{Object.keys(history).length}</div>
+                        <div className="text-2xl font-bold text-amber-400">{allKeysThisElo.length}</div>
                         <div className="text-xs text-slate-500">Jours joués</div>
                      </div>
                      <div>
@@ -667,27 +891,118 @@
             );
           };
 
+          const renderLeaderboard = () => {
+              return (
+                <div className="flex flex-col p-4 sm:p-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto">
+                    <div className="flex items-center mb-8 mt-4">
+                        <button onClick={() => setView('home')} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 transition">
+                            <IconArrowLeft />
+                        </button>
+                        <h2 className="text-2xl font-bold text-center flex-1 text-indigo-400">Classement</h2>
+                        <div className="w-10"></div>
+                    </div>
+
+                    <div className="text-center mb-6">
+                        <p className="text-slate-400 text-sm">Scores pour le {selectedDate}</p>
+                        <p className="text-xl font-bold text-amber-400">Catégorie {selectedElo} Elo</p>
+                    </div>
+
+                    {isFetchingLb ? (
+                         <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin"></div></div>
+                    ) : leaderboard.length === 0 ? (
+                        <div className="text-center p-8 bg-slate-800 rounded-xl border border-slate-700 text-slate-400">
+                            Soyez le premier à terminer vos problèmes en {selectedElo} Elo aujourd'hui !
+                        </div>
+                    ) : (
+                        <div className="space-y-3 pb-8">
+                            {leaderboard.map((score, index) => {
+                                const stats = getScoreStats(score.times);
+                                return (
+                                    <div key={index} className={`flex flex-col gap-2 p-4 rounded-xl border ${score.userId === fbUser?.uid ? 'bg-indigo-900/40 border-indigo-500/50' : 'bg-slate-800 border-slate-700'} shadow-md`}>
+                                        <div className="flex items-center gap-3">
+                                            <div className="font-black text-slate-500 w-6 text-lg">{index + 1}.</div>
+                                            <span className={`font-bold text-lg ${score.userId === fbUser?.uid ? 'text-indigo-300' : 'text-slate-200'}`}>
+                                                {score.username}
+                                                {score.userId === fbUser?.uid && " (Vous)"}
+                                            </span>
+                                        </div>
+                                        
+                                        <div className="pl-9 font-mono text-[11px] sm:text-xs text-slate-400 flex items-center flex-wrap gap-x-1.5">
+                                            {score.times.map((t, i) => (
+                                                <React.Fragment key={i}>
+                                                    <span className={t === 'NA' ? 'text-red-400' : (typeof t === 'number' ? 'text-emerald-400' : 'text-slate-500')}>
+                                                        {t === 'NA' ? 'NA' : (t === null ? '--:--' : formatTime(t))}
+                                                    </span>
+                                                    {i < 4 && <span className="text-slate-600">|</span>}
+                                                </React.Fragment>
+                                            ))}
+                                            <span className="text-slate-600 ml-1">|</span>
+                                            <span className={`font-bold ml-1 ${stats.solvedCount === 5 ? 'text-emerald-400' : (stats.solvedCount > 0 ? 'text-amber-400' : 'text-red-400')}`}>
+                                                T={formatTime(stats.totalTime)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+              );
+          };
+
           const renderSummary = () => {
+            const displayTimes = puzzleTimes;
+            const stats = getScoreStats(displayTimes);
+
+            const copyToClipboard = () => {
+                const hKey = getHistoryKey(selectedDate, selectedElo);
+                const officialTimes = history[hKey] ? (history[hKey].officialTimes || history[hKey].times) : puzzleTimes;
+                const officialStats = getScoreStats(officialTimes);
+                
+                const emojiBlocks = officialTimes.map(t => typeof t === 'number' ? '🟢' : (t === 'NA' ? '🔴' : '⚪')).join('');
+                const text = `♟️ Tac-Tic Chess (${selectedElo} Elo) - ${selectedDate}\n${emojiBlocks}\n${officialStats.solvedCount === 5 ? `⏱️ Temps : ${formatTime(officialStats.totalTime)}` : `❌ Terminé (${officialStats.solvedCount}/5)`}\nJouez ici : ${window.location.href}`;
+                navigator.clipboard.writeText(text).then(() => alert("Votre score officiel a été copié !"));
+            };
+
             return (
-              <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100">
+              <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-12">
                 <div className="text-center mt-8">
-                  <h2 className="text-4xl font-bold text-amber-400 mb-2">Session terminée !</h2>
-                  <p className="text-slate-400">Score sauvegardé sur votre téléphone.</p>
+                  <h2 className="text-4xl font-bold text-amber-400 mb-1">
+                    {isPracticeMode ? "Entraînement fini !" : "Session terminée !"}
+                  </h2>
+                  <p className="text-slate-400 text-sm">Difficulté : <span className="text-amber-300 font-bold">{selectedElo} Elo</span></p>
                 </div>
                 
                 <div className="w-full space-y-3">
-                  {puzzleTimes.map((t, i) => {
+                  {displayTimes.map((t, i) => {
                     const eloText = dailyPuzzles[i] ? dailyPuzzles[i].explanation.split('\n')[0].split('|')[1]?.trim() : '';
+                    const isPracticeSuccess = typeof t === 'string' && t.includes('_NA');
+                    let colorClass = 'text-emerald-400';
+                    if (t === 'NA') colorClass = 'text-red-400';
+                    else if (isPracticeSuccess) colorClass = 'text-amber-400';
+
                     return (
                       <div key={i} className="flex justify-between items-center p-4 bg-slate-800 rounded-xl border border-slate-700 shadow-lg">
                         <span className="font-semibold text-slate-300">N°{i + 1} <span className="text-xs text-slate-500 ml-1">({eloText})</span></span>
-                        <span className={`text-xl font-mono font-bold ${t === 'NA' ? 'text-red-400' : 'text-emerald-400'}`}>{formatTime(t)}</span>
+                        <span className={`text-xl font-mono font-bold ${colorClass}`}>{formatTime(t)}</span>
                       </div>
                     );
                   })}
                 </div>
 
-                <button onClick={() => setView('home')} className="w-full py-4 mb-8 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold text-lg shadow-lg transition">Retour à l'accueil</button>
+                <div className={`w-full text-center p-4 ${stats.solvedCount === 5 ? 'bg-emerald-900/30 border-emerald-500/50' : 'bg-slate-800 border-slate-700'} border rounded-xl`}>
+                    <p className="text-sm text-slate-300 mb-1">
+                        {stats.solvedCount === 5 ? "Temps Total" : `Temps Total (${stats.solvedCount}/5 réussis)`}
+                    </p>
+                    <p className={`text-3xl font-mono font-bold ${stats.solvedCount === 5 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {formatTime(stats.totalTime)}
+                    </p>
+                </div>
+
+                <div className="w-full flex gap-3 mt-4">
+                    <button onClick={copyToClipboard} className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition text-sm">Partager 📋</button>
+                    <button onClick={() => setView('home')} className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition text-sm">Accueil</button>
+                </div>
               </div>
             );
           };
@@ -753,12 +1068,35 @@
                   <div className="flex space-x-1.5 sm:space-x-2">
                     {[0, 1, 2, 3, 4].map(i => {
                       let dotClass = '';
-                      if (i === currentPuzzleIdx) dotClass = 'bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.5)]';
-                      else if (puzzleTimes[i] === 'NA') dotClass = 'bg-red-900/50 text-red-400 border border-red-500/50';
-                      else if (typeof puzzleTimes[i] === 'number') dotClass = 'bg-emerald-900/50 text-emerald-400 border border-emerald-500/50';
-                      else dotClass = 'bg-slate-700 text-slate-500';
                       
-                      return <div key={i} className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center font-bold font-mono text-xs sm:text-sm ${dotClass}`}>{i + 1}</div>;
+                      if (i === currentPuzzleIdx) {
+                          if (puzzleState === 'solved') {
+                              dotClass = 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'; // Vert
+                          } else if (puzzleState === 'failed') {
+                              dotClass = 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)]'; // Rouge
+                          } else {
+                              dotClass = 'bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.5)]'; // Orange
+                          }
+                      } 
+                      else if (puzzleTimes[i] === 'NA') {
+                          dotClass = 'bg-red-900/50 text-red-400 border border-red-500/50';
+                      } else if (typeof puzzleTimes[i] === 'string' && puzzleTimes[i].includes('_NA')) {
+                          dotClass = 'bg-emerald-900/50 text-emerald-400 border border-emerald-500/50';
+                      } else if (typeof puzzleTimes[i] === 'number') {
+                          dotClass = 'bg-emerald-900/50 text-emerald-400 border border-emerald-500/50';
+                      } else {
+                          dotClass = 'bg-slate-700 text-slate-500';
+                      }
+                      
+                      return (
+                        <div 
+                          key={i} 
+                          onClick={() => { if (isPracticeMode && !isAnimating) initPuzzle(i); }} 
+                          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center font-bold font-mono text-xs sm:text-sm ${dotClass} ${isPracticeMode && i !== currentPuzzleIdx ? 'cursor-pointer hover:scale-110 transition-transform hover:ring-2 ring-white/30' : ''}`}
+                        >
+                          {i + 1}
+                        </div>
+                      );
                     })}
                   </div>
                   <div className="flex flex-col items-end">
@@ -776,25 +1114,48 @@
                         <p className="text-slate-300 text-sm leading-relaxed">{currentPuzzle.explanation.split('\n')[1]}</p>
                       </div>
                       <p className="text-xs text-slate-500 mb-6">Cliquez n'importe où sur la carte pour revoir l'échiquier.</p>
-                      <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg relative z-50">
-                        {currentPuzzleIdx < 4 ? 'Problème Suivant' : 'Terminer'}
-                      </button>
+                      
+                      {isPracticeMode ? (
+                          <div className="flex gap-3 w-full relative z-50">
+                              <button onClick={(e) => { e.stopPropagation(); prevPuzzle(); }} disabled={currentPuzzleIdx === 0} className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-white rounded-xl font-bold shadow-lg transition">
+                                  Précédent
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={currentPuzzleIdx === 4} className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-30 text-white rounded-xl font-bold shadow-lg transition">
+                                  Suivant
+                              </button>
+                          </div>
+                      ) : (
+                          <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg relative z-50">
+                            {currentPuzzleIdx < 4 ? 'Problème Suivant' : 'Terminer'}
+                          </button>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="w-full mt-4 flex flex-col gap-3 bg-white p-3 rounded-xl shadow-lg text-slate-800">
-                  <div className="flex flex-row gap-3 items-stretch">
-                    <div className="w-1/2 flex justify-between items-center bg-slate-100 p-1.5 rounded-lg border border-slate-200">
-                      <button onClick={() => navigateHistory(-1)} disabled={historyIndex === 0 || isAnimating} className="p-2 bg-slate-200 disabled:opacity-30 rounded hover:bg-slate-300 transition flex items-center justify-center text-slate-800"><IconArrowLeft size={14} /></button>
+                  <div className="flex flex-row gap-2 items-stretch h-10">
+                    <div className={`${isPracticeMode ? 'w-2/5' : 'w-1/2'} flex justify-between items-center bg-slate-100 p-1 rounded-lg border border-slate-200 transition-all`}>
+                      <button onClick={() => navigateHistory(-1)} disabled={historyIndex === 0 || isAnimating} className="p-1 bg-slate-200 disabled:opacity-30 rounded hover:bg-slate-300 transition flex items-center justify-center text-slate-800"><IconArrowLeft size={14} /></button>
                       <span className="font-mono text-[10px] sm:text-xs font-bold text-slate-600 truncate px-1 text-center">{puzzleState === 'playing' ? (historyIndex === maxHistoryIndex ? 'Actuel' : `-${maxHistoryIndex - historyIndex}`) : `${historyIndex}/${currentPuzzle.moves.length}`}</span>
-                      <button onClick={() => navigateHistory(1)} disabled={isAnimating || (puzzleState === 'playing' ? historyIndex === maxHistoryIndex : historyIndex === currentPuzzle.moves.length)} className="p-2 bg-slate-200 disabled:opacity-30 rounded hover:bg-slate-300 transition flex items-center justify-center text-slate-800"><IconArrowRight size={14} /></button>
+                      <button onClick={() => navigateHistory(1)} disabled={isAnimating || (puzzleState === 'playing' ? historyIndex === maxHistoryIndex : historyIndex === currentPuzzle.moves.length)} className="p-1 bg-slate-200 disabled:opacity-30 rounded hover:bg-slate-300 transition flex items-center justify-center text-slate-800"><IconArrowRight size={14} /></button>
                     </div>
 
-                    {puzzleState === 'playing' ? (
-                      <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-1/2 bg-slate-50 hover:bg-red-50 disabled:opacity-50 text-slate-600 hover:text-red-500 border border-slate-200 rounded-lg font-bold transition text-xs sm:text-sm">Réponse (NA)</button>
+                    {isPracticeMode ? (
+                      <div className="w-3/5 flex gap-1.5">
+                         <button onClick={prevPuzzle} disabled={currentPuzzleIdx === 0 || isAnimating} className="flex-1 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 text-slate-700 rounded-lg flex justify-center items-center transition"><IconArrowLeft size={16}/></button>
+                         {puzzleState === 'playing' ? (
+                            <button onClick={surrenderPuzzle} disabled={isAnimating} className="flex-[2] bg-slate-50 hover:bg-red-50 disabled:opacity-50 text-slate-600 hover:text-red-500 border border-slate-200 rounded-lg font-bold transition text-xs">Solution</button>
+                         ) : (
+                            <button onClick={nextPuzzle} disabled={currentPuzzleIdx === 4 || isAnimating} className="flex-[2] bg-amber-500 hover:bg-amber-400 disabled:opacity-30 text-white rounded-lg font-bold shadow-md transition text-xs">Suivant</button>
+                         )}
+                      </div>
                     ) : (
-                      !flipped ? <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-1/2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white rounded-lg font-bold shadow-md text-xs sm:text-sm">{currentPuzzleIdx < 4 ? 'Suivant' : 'Terminer'}</button> : <div className="w-1/2"></div>
+                      puzzleState === 'playing' ? (
+                        <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-1/2 bg-slate-50 hover:bg-red-50 disabled:opacity-50 text-slate-600 hover:text-red-500 border border-slate-200 rounded-lg font-bold transition text-xs sm:text-sm">Réponse (NA)</button>
+                      ) : (
+                        !flipped ? <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-1/2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white rounded-lg font-bold shadow-md text-xs sm:text-sm">{currentPuzzleIdx < 4 ? 'Suivant' : 'Terminer'}</button> : <div className="w-1/2"></div>
+                      )
                     )}
                   </div>
                   <button onClick={() => finishDaily(true)} className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-700 rounded-lg font-semibold transition text-xs border border-slate-200">Retour à l'accueil</button>
@@ -810,6 +1171,7 @@
                     {view === 'home' && renderHome()}
                     {view === 'playing' && renderPlaying()}
                     {view === 'summary' && renderSummary()}
+                    {view === 'leaderboard' && renderLeaderboard()}
                 </div>
             </div>
           );
