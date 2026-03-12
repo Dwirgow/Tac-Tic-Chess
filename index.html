@@ -444,8 +444,16 @@
             const hKey = getHistoryKey(selectedDate, selectedElo);
             const oldHistoryDay = history[hKey];
             let initialTimes = [null, null, null, null, null];
+            
+            // Récupération du chronomètre global sauvegardé
+            let savedTime = 300;
 
-            if (oldHistoryDay) initialTimes = [...oldHistoryDay.times];
+            if (oldHistoryDay) {
+                initialTimes = [...oldHistoryDay.times];
+                if (oldHistoryDay.remainingTime !== undefined) {
+                    savedTime = oldHistoryDay.remainingTime;
+                }
+            }
             setPuzzleTimes(initialTimes);
 
             let firstUnsolved = 0;
@@ -453,9 +461,12 @@
                 for(let i = 0; i < 5; i++) {
                    if (initialTimes[i] === null) { firstUnsolved = i; break; }
                 }
+            } else {
+                // En practice, on réinitialise toujours le chrono
+                savedTime = 300;
             }
             
-            setGlobalTime(300);
+            setGlobalTime(savedTime);
             setView('playing');
             initPuzzle(firstUnsolved);
           };
@@ -715,14 +726,30 @@
 
             if (!isPracticeMode) {
                 const officialTimes = [...mergedTimes];
-                const newHistory = { ...history, [hKey]: { times: mergedTimes, officialTimes: officialTimes, timestamp: Date.now() } };
+                const newHistory = { 
+                    ...history, 
+                    [hKey]: { 
+                        times: mergedTimes, 
+                        officialTimes: officialTimes, 
+                        remainingTime: globalTime, // <-- Sauvegarde du chronomètre ici
+                        timestamp: Date.now() 
+                    } 
+                };
                 setHistory(newHistory);
                 localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
                 
                 await saveScoreToFirebase(officialTimes);
             } else {
                 const officialTimes = oldHistoryDay ? (oldHistoryDay.officialTimes || oldHistoryDay.times) : mergedTimes;
-                const newHistory = { ...history, [hKey]: { times: mergedTimes, officialTimes: officialTimes, timestamp: Date.now() } };
+                const newHistory = { 
+                    ...history, 
+                    [hKey]: { 
+                        times: mergedTimes, 
+                        officialTimes: officialTimes, 
+                        remainingTime: oldHistoryDay ? oldHistoryDay.remainingTime : 300,
+                        timestamp: Date.now() 
+                    } 
+                };
                 setHistory(newHistory);
                 localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
             }
@@ -1158,7 +1185,6 @@
                           onClick={() => { 
                               if (isPracticeMode && !isAnimating) { 
                                   initPuzzle(i); 
-                                  // Jouer un son au changement manuel de puzzle
                                   playSound('flip'); 
                               } 
                           }} 
