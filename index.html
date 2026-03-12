@@ -382,7 +382,6 @@
 
           useEffect(() => {
             let interval;
-            // Seul le mode daily possède une contrainte de temps
             if (view === 'playing' && !isPaused && gameMode === 'daily' && globalTime > 0) {
               interval = setInterval(() => {
                 setGlobalTime(prev => {
@@ -398,7 +397,6 @@
           const handleTimeOut = () => {
             setIsPaused(true);
             setPuzzleState('failed');
-            // Timeout n'arrive qu'en daily
             if (gameMode === 'daily') {
                 setPuzzleTimes(prev => {
                   const newTimes = [...prev];
@@ -438,7 +436,7 @@
                   const unsubscribe = onSnapshot(colRef, (snapshot) => {
                       const allDocs = snapshot.docs.map(d => d.data());
                       const dayScores = allDocs.filter(s => s.date === selectedDate);
-                      dayScores.sort((a, b) => b.score - a.score); // Classement Survie basé uniquement sur le score
+                      dayScores.sort((a, b) => b.score - a.score);
                       setSurvivalLeaderboard(dayScores);
                       setIsFetchingLb(false);
                   }, (error) => setIsFetchingLb(false));
@@ -483,9 +481,6 @@
             }, 1000);
           };
 
-          // ===============================================
-          // LANCEMENT MODE SURVIE
-          // ===============================================
           const startSurvivalPhase = async () => {
               const todaySurv = survivalHistory[selectedDate];
               if (todaySurv && todaySurv.status === 'completed') return; 
@@ -507,7 +502,7 @@
                   for (let elo of ELO_CATEGORIES) {
                       const dailyList = generatePuzzlesForDate(dStr, allDbs[elo]);
                       if (dailyList && dailyList.length > 0) {
-                          puzAllWeek.push(...dailyList); // Ajoute tous les problèmes quotidiens = ~175
+                          puzAllWeek.push(...dailyList);
                       }
                   }
               }
@@ -515,11 +510,11 @@
               puzAllWeek = shuffleArray(puzAllWeek, selectedDate);
               
               setSurvivalPuzzles(puzAllWeek);
-              setDailyPuzzles(puzAllWeek); // Plateau utilise dailyPuzzles
+              setDailyPuzzles(puzAllWeek); 
               
               const startIndex = todaySurv ? todaySurv.score : 0;
               setCurrentPuzzleIdx(startIndex);
-              setGlobalTime(0); // Le chronomètre n'a pas d'importance ici
+              setGlobalTime(0); 
               setView('playing');
               initPuzzle(startIndex, puzAllWeek);
           };
@@ -656,7 +651,7 @@
               setSelectedSquare(null);
               animateSolutionAndFail(true);
               if (gameMode === 'survival') {
-                  setTimeout(() => finishSurvival(true), 1500); // true = game over
+                  setTimeout(() => finishSurvival(true), 1500); 
               }
             }
           };
@@ -788,6 +783,13 @@
             }
           };
 
+          const prevPuzzle = () => {
+            if (isAnimating) return;
+            if (currentPuzzleIdx > 0) {
+                initPuzzle(currentPuzzleIdx - 1);
+            }
+          };
+
           const nextPuzzle = () => {
             if (isAnimating || gameMode === 'survival') return;
             let nextIdx = currentPuzzleIdx + 1;
@@ -817,9 +819,6 @@
             }
           };
 
-          // ===============================================
-          // SAUVEGARDE SURVIE
-          // ===============================================
           const finishSurvival = async (isGameOver = false) => {
               if (!isGameOver) {
                   setView('home');
@@ -1181,7 +1180,7 @@
 
           const renderLeaderboard = () => {
               return (
-                <div className="flex flex-col p-4 sm:p-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto">
+                <div className="flex flex-col p-4 sm:p-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 overflow-y-auto">
                     <div className="flex items-center mb-8 mt-4">
                         <button onClick={() => setView('home')} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 transition">
                             <IconArrowLeft />
@@ -1216,7 +1215,7 @@
                                                         {score.username} {score.userId === fbUser?.uid && " (Vous)"}
                                                     </span>
                                                 </div>
-                                                <div className="font-black text-xl text-amber-400">{score.score} <span className="text-sm text-slate-500">/175</span></div>
+                                                <div className="font-black text-xl text-amber-400">{score.score}</div>
                                             </div>
                                         </div>
                                     );
@@ -1267,8 +1266,8 @@
                 };
                 
                 return (
-                  <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-12">
-                    <div className="text-center mt-8">
+                  <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 pb-12 overflow-y-auto">
+                    <div className="text-center">
                       <h2 className="text-4xl font-bold text-amber-400 mb-1">
                         {score === maxPuz ? "Légendaire !" : "Survie terminée !"}
                       </h2>
@@ -1304,8 +1303,8 @@
             };
 
             return (
-              <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-12">
-                <div className="text-center mt-8">
+              <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 pb-12 overflow-y-auto">
+                <div className="text-center">
                   <h2 className="text-4xl font-bold text-amber-400 mb-1">
                     {isPracticeMode ? (isLocalPerfect ? "Tout est corrigé !" : "Entraînement fini !") : "Session terminée !"}
                   </h2>
@@ -1421,22 +1420,28 @@
             }
 
             return (
-              <div className="flex flex-col items-center w-full max-w-md mx-auto h-[100dvh] bg-slate-900 text-slate-100 p-4 pb-6 overflow-hidden" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
+              <div className="flex flex-col items-center w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 p-4 pb-6 overflow-hidden" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
                 
+                {/* EN-TÊTE AVEC TITRE INTÉGRÉ ET FIXE */}
                 <div className="w-full flex justify-between items-center mb-4 shrink-0">
                     <button onClick={() => {
                         if (gameMode === 'survival') { finishSurvival(); }
                         else { finishDaily(true); }
-                    }} className="flex items-center gap-2 text-slate-400 hover:text-white transition font-bold text-sm bg-slate-800 py-2 px-3 rounded-lg border border-slate-700">
-                        <IconArrowLeft size={18} /> Accueil
+                    }} className="flex items-center gap-1 text-slate-400 hover:text-white transition font-bold text-xs sm:text-sm bg-slate-800 py-1.5 px-2 sm:py-2 sm:px-3 rounded-lg border border-slate-700 shrink-0">
+                        <IconArrowLeft size={16} /> Accueil
                     </button>
+                    
+                    <h1 className="text-[18px] sm:text-xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-md whitespace-nowrap mx-1 shrink-0">
+                        Tac-Tic Chess
+                    </h1>
+
                     {gameMode === 'daily' ? (
-                        <div className={`text-2xl font-mono font-bold px-3 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner ${globalTime < 60 ? 'text-red-400 animate-pulse border-red-500/50' : 'text-slate-100'}`}>
+                        <div className={`text-lg sm:text-xl font-mono font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner shrink-0 ${globalTime < 60 ? 'text-red-400 animate-pulse border-red-500/50' : 'text-slate-100'}`}>
                             {formatTime(globalTime)}
                         </div>
                     ) : (
-                        <div className="text-lg font-bold px-3 py-1 bg-slate-800 rounded-lg border border-slate-700 text-amber-400 flex items-center shadow-inner">
-                            <IconFlame size={18} className="mr-1" /> Survie
+                        <div className="text-sm font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 text-amber-400 flex items-center shadow-inner shrink-0 whitespace-nowrap">
+                            <IconFlame size={16} className="mr-1" /> Survie
                         </div>
                     )}
                 </div>
@@ -1509,7 +1514,6 @@
 
                 <div className="w-full shrink-0 flex flex-col gap-3 mt-4">
                   
-                  {/* LIGNE 1 : Navigation dans les coups du problème (Historique) pour les deux modes */}
                   <div className="flex justify-between items-center bg-slate-800 p-2 rounded-xl border border-slate-700 shadow-md w-full h-16">
                       <button onClick={() => navigateHistory(-1)} disabled={historyIndex === 0 || isAnimating} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
                           <IconArrowLeft size={28} />
