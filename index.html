@@ -307,7 +307,7 @@
                   if (databases[selectedElo].length > 0) return; 
                   setIsLoadingDB(true);
                   try {
-                      const response = await fetch(ELO_URLS[selectedElo]);
+                      const response = await fetch(ELO_URLS[selectedElo] + "?v=1.0");
                       if (!response.ok) throw new Error("Fichier introuvable");
                       const textData = await response.text();
                       const parsedData = parseCSV(textData);
@@ -1624,6 +1624,4 @@
         root.render(<App />);
     </script>
 </body>
-
 </html>
-
