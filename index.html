@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     
+    <!-- Paramètres pour l'installation sur téléphone -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,21 +13,31 @@
     
     <title>Tac-Tic Chess</title>
 
-    <link rel="icon" type="image/png" href="./icon.png">
+    <!-- Icône pour le navigateur Web (Générée automatiquement en SVG avec le T orange) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='%230f172a'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' fill='%23f59e0b' font-family='Arial, sans-serif' font-size='360' font-weight='bold'>T</text></svg>">
     
+    <!-- Icône pour l'écran d'accueil du téléphone -->
     <link rel="apple-touch-icon" href="./icon.png">
     
+    <!-- Fichier Manifest pour Android -->
     <link rel="manifest" href="./manifest.json">
 
+    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
+    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
+    <!-- ========================================== -->
+    <!-- CHARGEMENT DES MODULES FIREBASE            -->
+    <!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -62,7 +73,7 @@
         const { useState, useEffect, useRef, useMemo } = React;
 
         // ============================================================================
-        // 1. CONFIGURATION FIREBASE
+        // 1. CONFIGURATION FIREBASE (FIXÉE EN DUR)
         // ============================================================================
         const monFirebaseConfig = {
             apiKey: "AIzaSyDoUW0pmncV9XcqQfqsOx5BivS0YZs-TMA",
@@ -83,7 +94,7 @@
             900: "./900-1400-5000_problemes_aleatoires.csv",
             1400: "./1400-1900-5000_problemes_aleatoires.csv",
             1900: "./1900-2400-5000_problemes_aleatoires.csv",
-            2400: "./plus2400-5000_problemes_aleatoires.csv"
+            2400: "./2400-2900-5000_problemes_aleatoires.csv"
         };
 
         const FALLBACK_DB = [
@@ -172,7 +183,7 @@
         const IconPlay = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
         const IconTrophy = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
         const IconUser = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
-        const IconFlame = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
+        const IconFlame = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-2.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
 
         const parseCSV = (textData) => {
             try { return JSON.parse(textData); } catch (e) {}
@@ -268,21 +279,12 @@
                     if (window.FirebaseLib) {
                         clearInterval(checkFirebase);
                         try {
-                            let finalConfig = monFirebaseConfig;
-                            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-                                finalConfig = JSON.parse(__firebase_config);
-                            }
-                            const app = window.FirebaseLib.initializeApp(finalConfig);
+                            const app = window.FirebaseLib.initializeApp(monFirebaseConfig);
                             const auth = window.FirebaseLib.getAuth(app);
                             database = window.FirebaseLib.getFirestore(app);
                             setFbDb(database);
 
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await window.FirebaseLib.signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await window.FirebaseLib.signInAnonymously(auth);
-                            }
-
+                            await window.FirebaseLib.signInAnonymously(auth);
                             window.FirebaseLib.onAuthStateChanged(auth, (user) => setFbUser(user));
                         } catch(err) {
                             console.error("Erreur Firebase.", err);
@@ -305,7 +307,7 @@
                   if (databases[selectedElo].length > 0) return; 
                   setIsLoadingDB(true);
                   try {
-                      const response = await fetch(ELO_URLS[selectedElo]);
+                      const response = await fetch(ELO_URLS[selectedElo]) + "?v=1.1");
                       if (!response.ok) throw new Error("Fichier introuvable");
                       const textData = await response.text();
                       const parsedData = parseCSV(textData);
@@ -384,6 +386,69 @@
             return () => clearInterval(interval);
           }, [view, isPaused, globalTime, gameMode]);
 
+          // ===============================================
+          // LOGIQUE ANTI-CHEAT (SAUVEGARDE INSTANTANÉE)
+          // ===============================================
+          const saveScoreToFirebase = async (mergedTimes) => {
+              if (!fbUser || !fbDb || !window.FirebaseLib) return;
+              const isPerfect = mergedTimes.every(t => typeof t === 'number');
+              try {
+                  const { doc, setDoc } = window.FirebaseLib;
+                  const docRef = doc(fbDb, 'artifacts', 'tacticchess', 'public', 'data', 'scores', `${selectedDate}_${selectedElo}_${fbUser.uid}`);
+                  await setDoc(docRef, {
+                      date: selectedDate, elo: selectedElo, userId: fbUser.uid, username: username || "Joueur Anonyme",
+                      times: mergedTimes, isPerfect: isPerfect, timestamp: Date.now()
+                  });
+              } catch (e) {}
+          };
+
+          const pushSurvivalScoreToFirebase = async (score) => {
+              if (!fbUser || !fbDb || !window.FirebaseLib) return;
+              try {
+                  const { doc, setDoc } = window.FirebaseLib;
+                  const docRef = doc(fbDb, 'artifacts', 'tacticchess', 'public', 'data', 'survival_scores', `${selectedDate}_${fbUser.uid}`);
+                  await setDoc(docRef, {
+                      date: selectedDate,
+                      userId: fbUser.uid,
+                      username: username || "Joueur Anonyme",
+                      score: score,
+                      timestamp: Date.now()
+                  });
+              } catch (e) {}
+          };
+
+          const saveDailyProgress = (newTimes, timeRemaining = globalTime) => {
+              if (isPracticeMode || gameMode !== 'daily') return;
+              
+              setHistory(prevHistory => {
+                  const hKey = getHistoryKey(selectedDate, selectedElo);
+                  const newHistory = { 
+                      ...prevHistory, 
+                      [hKey]: { 
+                          ...(prevHistory[hKey] || {}),
+                          times: newTimes, 
+                          officialTimes: newTimes, 
+                          remainingTime: timeRemaining,
+                          timestamp: Date.now() 
+                      } 
+                  };
+                  localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
+                  return newHistory;
+              });
+              saveScoreToFirebase(newTimes); // Sauvegarde Firebase instantanée
+          };
+
+          const saveSurvivalProgress = (score, status = 'playing') => {
+              setSurvivalHistory(prev => {
+                  const newHistory = { ...prev, [selectedDate]: { score, status, timestamp: Date.now() } };
+                  localStorage.setItem('chessSurvival_history', JSON.stringify(newHistory));
+                  return newHistory;
+              });
+              if (status === 'completed') {
+                  pushSurvivalScoreToFirebase(score); // Sauvegarde Firebase instantanée en cas de défaite/victoire finale
+              }
+          };
+
           const handleTimeOut = () => {
             setIsPaused(true);
             setPuzzleState('failed');
@@ -392,6 +457,7 @@
                   const newTimes = [...prev];
                   if (!isPracticeMode) {
                       for (let i = currentPuzzleIdx; i < 5; i++) if (newTimes[i] === null) newTimes[i] = 'NA';
+                      saveDailyProgress(newTimes, 0); // Sauvegarde immédiate
                   }
                   return newTimes;
                 });
@@ -399,16 +465,14 @@
             }
           };
 
-          // On fetch le leaderboard dès qu'on est sur home ou leaderboard pour avoir le badge en temps réel
           useEffect(() => {
               if ((view !== 'leaderboard' && view !== 'home') || !fbDb || !fbUser) return;
               
               setIsFetchingLb(true);
               const { collection, onSnapshot } = window.FirebaseLib;
-              const appId = typeof __app_id !== 'undefined' ? __app_id : 'tacticchess';
               
               if (gameMode === 'daily') {
-                  const colRef = collection(fbDb, 'artifacts', appId, 'public', 'data', 'scores');
+                  const colRef = collection(fbDb, 'artifacts', 'tacticchess', 'public', 'data', 'scores');
                   const unsubscribe = onSnapshot(colRef, (snapshot) => {
                       const allDocs = snapshot.docs.map(d => d.data());
                       const dayScores = allDocs.filter(s => s.date === selectedDate && s.elo === selectedElo);
@@ -423,7 +487,7 @@
                   }, (error) => setIsFetchingLb(false));
                   return unsubscribe;
               } else {
-                  const colRef = collection(fbDb, 'artifacts', appId, 'public', 'data', 'survival_scores');
+                  const colRef = collection(fbDb, 'artifacts', 'tacticchess', 'public', 'data', 'survival_scores');
                   const unsubscribe = onSnapshot(colRef, (snapshot) => {
                       const allDocs = snapshot.docs.map(d => d.data());
                       const dayScores = allDocs.filter(s => s.date === selectedDate);
@@ -554,7 +618,10 @@
             if (gameMode === 'daily') {
                 setPuzzleTimes(prev => { 
                     const newTimes = [...prev]; 
-                    if (!isPracticeMode) newTimes[currentPuzzleIdx] = 'NA'; 
+                    if (!isPracticeMode) {
+                        newTimes[currentPuzzleIdx] = 'NA'; 
+                        saveDailyProgress(newTimes); // Sauvegarde immédiate
+                    }
                     return newTimes; 
                 });
             }
@@ -641,7 +708,9 @@
               setCurrentFen(game.fen());
               setSelectedSquare(null);
               animateSolutionAndFail(true);
-              // Mode Survie : on enlève le Timeout forcé pour laisser l'utilisateur voir la solution via le bouton Terminer
+              if (gameMode === 'survival') {
+                  saveSurvivalProgress(currentPuzzleIdx, 'completed'); // Sauvegarde immédiate avant que le joueur puisse refresh
+              }
             }
           };
 
@@ -713,12 +782,9 @@
             if (gameMode === 'survival') {
                 if (status === 'solved') {
                     const newScore = currentPuzzleIdx + 1;
-                    const newHistory = { ...survivalHistory, [selectedDate]: { score: newScore, status: 'playing', timestamp: Date.now() } };
-                    setSurvivalHistory(newHistory);
-                    localStorage.setItem('chessSurvival_history', JSON.stringify(newHistory));
+                    saveSurvivalProgress(newScore, 'playing'); // Sauvegarde immédiate
                 }
 
-                // Dans les deux cas (résolu ou échoué), on retourne la carte (comme en mode classique)
                 setIsAnimating(true);
                 initialMoveTimeout.current = setTimeout(() => { 
                     setFlipped(true); 
@@ -747,6 +813,11 @@
               } else {
                   if (!isPracticeMode) newTimes[currentPuzzleIdx] = 'NA';
               }
+              
+              if (!isPracticeMode) {
+                  saveDailyProgress(newTimes); // Sauvegarde immédiate
+              }
+
               return newTimes;
             });
 
@@ -763,6 +834,9 @@
           const surrenderPuzzle = () => {
             if (puzzleState !== 'playing' || isAnimating) return;
             animateSolutionAndFail(false);
+            if (gameMode === 'survival') {
+                saveSurvivalProgress(currentPuzzleIdx, 'completed'); // Sauvegarde immédiate
+            }
           };
 
           const prevPuzzle = () => {
@@ -822,39 +896,7 @@
               setView('summary');
               
               const finalScore = (puzzleState === 'solved') ? currentPuzzleIdx + 1 : currentPuzzleIdx;
-              
-              const newHistory = { ...survivalHistory, [selectedDate]: { score: finalScore, status: 'completed', timestamp: Date.now() } };
-              setSurvivalHistory(newHistory);
-              localStorage.setItem('chessSurvival_history', JSON.stringify(newHistory));
-              
-              if (fbUser && fbDb && window.FirebaseLib) {
-                  try {
-                      const { doc, setDoc } = window.FirebaseLib;
-                      const appId = typeof __app_id !== 'undefined' ? __app_id : 'tacticchess';
-                      const docRef = doc(fbDb, 'artifacts', appId, 'public', 'data', 'survival_scores', `${selectedDate}_${fbUser.uid}`);
-                      await setDoc(docRef, {
-                          date: selectedDate,
-                          userId: fbUser.uid,
-                          username: username || "Joueur Anonyme",
-                          score: finalScore,
-                          timestamp: Date.now()
-                      });
-                  } catch (e) { console.error("Erreur save survie", e); }
-              }
-          };
-
-          const saveScoreToFirebase = async (mergedTimes) => {
-              if (!fbUser || !fbDb || !window.FirebaseLib) return;
-              const isPerfect = mergedTimes.every(t => typeof t === 'number');
-              try {
-                  const { doc, setDoc } = window.FirebaseLib;
-                  const appId = typeof __app_id !== 'undefined' ? __app_id : 'tacticchess';
-                  const docRef = doc(fbDb, 'artifacts', appId, 'public', 'data', 'scores', `${selectedDate}_${selectedElo}_${fbUser.uid}`);
-                  await setDoc(docRef, {
-                      date: selectedDate, elo: selectedElo, userId: fbUser.uid, username: username || "Joueur Anonyme",
-                      times: mergedTimes, isPerfect: isPerfect, timestamp: Date.now()
-                  });
-              } catch (e) {}
+              saveSurvivalProgress(finalScore, 'completed');
           };
 
           const finishDaily = async (goToHome = false) => {
@@ -866,11 +908,7 @@
             const mergedTimes = [...puzzleTimes];
 
             if (!isPracticeMode) {
-                const officialTimes = [...mergedTimes];
-                const newHistory = { ...history, [hKey]: { times: mergedTimes, officialTimes: officialTimes, remainingTime: globalTime, timestamp: Date.now() } };
-                setHistory(newHistory);
-                localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
-                await saveScoreToFirebase(officialTimes);
+                saveDailyProgress(mergedTimes, globalTime); // Helper appelé
             } else {
                 const officialTimes = oldHistoryDay ? (oldHistoryDay.officialTimes || oldHistoryDay.times) : mergedTimes;
                 const newHistory = { ...history, [hKey]: { times: mergedTimes, officialTimes: officialTimes, remainingTime: oldHistoryDay ? oldHistoryDay.remainingTime : 300, timestamp: Date.now() } };
@@ -914,7 +952,6 @@
           }
 
           const renderHome = () => {
-            // Cacul de la position actuelle du joueur dans le classement
             let myRank = -1;
             if (gameMode === 'daily') {
                 myRank = leaderboard.findIndex(s => s.userId === fbUser?.uid);
@@ -927,7 +964,6 @@
                 if (myRank === 1) return 'text-[#E0E0E0] opacity-100 drop-shadow-[0_0_8px_rgba(224,224,224,0.6)]'; // Argent
                 if (myRank === 2) return 'text-[#CD7F32] opacity-100 drop-shadow-[0_0_8px_rgba(205,127,50,0.6)]'; // Bronze
                 
-                // Couleurs par défaut si non classé dans le top 3
                 if (isSurv) return 'text-amber-500 opacity-10';
                 return isPerfect ? 'text-emerald-400 opacity-20' : (isCompleted ? 'text-red-400 opacity-20' : 'text-amber-400 opacity-20');
             };
@@ -940,6 +976,7 @@
                 
                 return (
                     <div className="flex flex-col items-center p-4 sm:p-6 space-y-5 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto pb-20">
+                        
                         <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 mt-2 shadow-inner">
                             <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
                             <button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
