@@ -13,8 +13,8 @@
     
     <title>Tac-Tic Chess</title>
 
-    <!-- Icône pour le navigateur Web (Générée automatiquement en SVG avec le T orange) -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='%230f172a'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' fill='%23f59e0b' font-family='Arial, sans-serif' font-size='360' font-weight='bold'>T</text></svg>">
+    <!-- Icône pour le navigateur Web -->
+   <link rel="icon" type="image/png" href="./icon.png">
     
     <!-- Icône pour l'écran d'accueil du téléphone -->
     <link rel="apple-touch-icon" href="./icon.png">
@@ -94,7 +94,7 @@
             900: "./900-1400-5000_problemes_aleatoires.csv",
             1400: "./1400-1900-5000_problemes_aleatoires.csv",
             1900: "./1900-2400-5000_problemes_aleatoires.csv",
-            2400: "./plus2400-5000_problemes_aleatoires.csv"
+            2400: "./2400-2900-5000_problemes_aleatoires.csv"
         };
 
         const FALLBACK_DB = [
@@ -136,7 +136,7 @@
             const urls = {
                 move: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Move.ogg',
                 capture: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Capture.ogg',
-                check: 'https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3', // Son ajouté pour l'échec
+                check: 'https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3',
                 flip: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/GenericNotify.ogg',
                 success: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/GenericNotify.ogg',
                 fail: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Error.ogg'
@@ -1642,4 +1642,5 @@
         root.render(<App />);
     </script>
 </body>
+
 </html>
