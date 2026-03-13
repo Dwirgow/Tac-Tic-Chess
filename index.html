@@ -13,8 +13,8 @@
     
     <title>Tac-Tic Chess</title>
 
-    <!-- Icône pour le navigateur Web -->
-    <link rel="icon" type="image/png" href="./icon.png">
+    <!-- Icône pour le navigateur Web (Générée automatiquement en SVG avec le T orange) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='%230f172a'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' fill='%23f59e0b' font-family='Arial, sans-serif' font-size='360' font-weight='bold'>T</text></svg>">
     
     <!-- Icône pour l'écran d'accueil du téléphone -->
     <link rel="apple-touch-icon" href="./icon.png">
@@ -94,7 +94,7 @@
             900: "./900-1400-5000_problemes_aleatoires.csv",
             1400: "./1400-1900-5000_problemes_aleatoires.csv",
             1900: "./1900-2400-5000_problemes_aleatoires.csv",
-            2400: "./2400-2900-5000_problemes_aleatoires.csv"
+            2400: "./plus2400-5000_problemes_aleatoires.csv"
         };
 
         const FALLBACK_DB = [
@@ -136,6 +136,7 @@
             const urls = {
                 move: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Move.ogg',
                 capture: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Capture.ogg',
+                check: 'https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3', // Son ajouté pour l'échec
                 flip: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/GenericNotify.ogg',
                 success: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/GenericNotify.ogg',
                 fail: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Error.ogg'
@@ -435,7 +436,7 @@
                   localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
                   return newHistory;
               });
-              saveScoreToFirebase(newTimes); // Sauvegarde Firebase instantanée
+              saveScoreToFirebase(newTimes);
           };
 
           const saveSurvivalProgress = (score, status = 'playing') => {
@@ -445,7 +446,7 @@
                   return newHistory;
               });
               if (status === 'completed') {
-                  pushSurvivalScoreToFirebase(score); // Sauvegarde Firebase instantanée en cas de défaite/victoire finale
+                  pushSurvivalScoreToFirebase(score);
               }
           };
 
@@ -457,7 +458,7 @@
                   const newTimes = [...prev];
                   if (!isPracticeMode) {
                       for (let i = currentPuzzleIdx; i < 5; i++) if (newTimes[i] === null) newTimes[i] = 'NA';
-                      saveDailyProgress(newTimes, 0); // Sauvegarde immédiate
+                      saveDailyProgress(newTimes, 0);
                   }
                   return newTimes;
                 });
@@ -524,7 +525,8 @@
               const firstMove = newGame.move({ from: firstMoveUci.substring(0, 2), to: firstMoveUci.substring(2, 4), promotion: firstMoveUci.length === 5 ? firstMoveUci[4] : 'q' });
               
               if (firstMove) {
-                 if (firstMove.captured) playSound('capture');
+                 if (newGame.in_check()) playSound('check');
+                 else if (firstMove.captured) playSound('capture');
                  else playSound('move');
               }
               
@@ -620,7 +622,7 @@
                     const newTimes = [...prev]; 
                     if (!isPracticeMode) {
                         newTimes[currentPuzzleIdx] = 'NA'; 
-                        saveDailyProgress(newTimes); // Sauvegarde immédiate
+                        saveDailyProgress(newTimes); 
                     }
                     return newTimes; 
                 });
@@ -645,7 +647,8 @@
                 const m = game.move({ from: nextUci.substring(0, 2), to: nextUci.substring(2, 4), promotion: nextUci.length === 5 ? nextUci[4] : 'q' });
                 
                 if (m) {
-                    if (m.captured) playSound('capture');
+                    if (game.in_check()) playSound('check');
+                    else if (m.captured) playSound('capture');
                     else playSound('move');
                 }
                 
@@ -673,7 +676,8 @@
             const moveAttempt = game.move({ from: fromAlg, to: toAlg, promotion: 'q' });
             if (moveAttempt === null) { setSelectedSquare(null); return; }
 
-            if (moveAttempt.captured) playSound('capture');
+            if (game.in_check()) playSound('check');
+            else if (moveAttempt.captured) playSound('capture');
             else playSound('move');
 
             if (fromAlg === expectedUci.substring(0, 2) && toAlg === expectedUci.substring(2, 4)) {
@@ -692,7 +696,8 @@
                   const oppMove = game.move({ from: oppUci.substring(0, 2), to: oppUci.substring(2, 4), promotion: oppUci.length === 5 ? oppUci[4] : 'q' });
                   
                   if (oppMove) {
-                      if (oppMove.captured) playSound('capture');
+                      if (game.in_check()) playSound('check');
+                      else if (oppMove.captured) playSound('capture');
                       else playSound('move');
                   }
                   
@@ -709,7 +714,7 @@
               setSelectedSquare(null);
               animateSolutionAndFail(true);
               if (gameMode === 'survival') {
-                  saveSurvivalProgress(currentPuzzleIdx, 'completed'); // Sauvegarde immédiate avant que le joueur puisse refresh
+                  saveSurvivalProgress(currentPuzzleIdx, 'completed'); 
               }
             }
           };
@@ -782,7 +787,7 @@
             if (gameMode === 'survival') {
                 if (status === 'solved') {
                     const newScore = currentPuzzleIdx + 1;
-                    saveSurvivalProgress(newScore, 'playing'); // Sauvegarde immédiate
+                    saveSurvivalProgress(newScore, 'playing');
                 }
 
                 setIsAnimating(true);
@@ -815,7 +820,7 @@
               }
               
               if (!isPracticeMode) {
-                  saveDailyProgress(newTimes); // Sauvegarde immédiate
+                  saveDailyProgress(newTimes); 
               }
 
               return newTimes;
@@ -835,7 +840,7 @@
             if (puzzleState !== 'playing' || isAnimating) return;
             animateSolutionAndFail(false);
             if (gameMode === 'survival') {
-                saveSurvivalProgress(currentPuzzleIdx, 'completed'); // Sauvegarde immédiate
+                saveSurvivalProgress(currentPuzzleIdx, 'completed'); 
             }
           };
 
@@ -908,7 +913,7 @@
             const mergedTimes = [...puzzleTimes];
 
             if (!isPracticeMode) {
-                saveDailyProgress(mergedTimes, globalTime); // Helper appelé
+                saveDailyProgress(mergedTimes, globalTime); 
             } else {
                 const officialTimes = oldHistoryDay ? (oldHistoryDay.officialTimes || oldHistoryDay.times) : mergedTimes;
                 const newHistory = { ...history, [hKey]: { times: mergedTimes, officialTimes: officialTimes, remainingTime: oldHistoryDay ? oldHistoryDay.remainingTime : 300, timestamp: Date.now() } };
@@ -934,7 +939,8 @@
             }
             
             if (lastMove) {
-                if (lastMove.captured) playSound('capture');
+                if (newGame.in_check()) playSound('check');
+                else if (lastMove.captured) playSound('capture');
                 else playSound('move');
             }
             
@@ -1462,7 +1468,13 @@
 
             let nextBtnText = "Suivant";
             if (gameMode === 'survival') {
-                nextBtnText = puzzleState === 'failed' ? "Terminer la Survie" : "Problème Suivant";
+                if (puzzleState === 'failed') {
+                    nextBtnText = "Terminer la Survie";
+                } else if (currentPuzzleIdx + 1 >= survivalPuzzles.length) {
+                    nextBtnText = "Terminer la Survie";
+                } else {
+                    nextBtnText = "Problème Suivant";
+                }
             } else if (!isPracticeMode) {
                 let tempIdx = currentPuzzleIdx + 1;
                 while(tempIdx < 5 && puzzleTimes[tempIdx] !== null) tempIdx++;
@@ -1478,9 +1490,10 @@
             return (
               <div className="flex flex-col items-center w-full max-w-md mx-auto h-[100dvh] bg-slate-900 text-slate-100 p-4 pb-4 overflow-hidden" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
                 
+                {/* EN-TÊTE AVEC TITRE INTÉGRÉ ET FIXE */}
                 <div className="w-full flex justify-between items-center mb-4 shrink-0">
                     <button onClick={() => {
-                        if (gameMode === 'survival') { finishSurvival(); }
+                        if (gameMode === 'survival') { setView('home'); }
                         else { finishDaily(true); }
                     }} className="flex items-center gap-1 text-slate-400 hover:text-white transition font-bold text-xs sm:text-sm bg-slate-800 py-1.5 px-2 sm:py-2 sm:px-3 rounded-lg border border-slate-700 shrink-0">
                         <IconArrowLeft size={16} /> Accueil
@@ -1629,5 +1642,4 @@
         root.render(<App />);
     </script>
 </body>
-
 </html>
