@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     
-    <!-- Paramètres pour l'installation sur téléphone -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,31 +12,21 @@
     
     <title>Tac-Tic Chess</title>
 
-    <!-- Icône pour le navigateur Web (Ordinateur) -->
     <link rel="icon" type="image/png" href="./icon.png">
     
-    <!-- Icône pour l'écran d'accueil du téléphone -->
     <link rel="apple-touch-icon" href="./icon.png">
     
-    <!-- Fichier Manifest pour Android -->
     <link rel="manifest" href="./manifest.json">
 
-    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
-    <!-- ========================================== -->
-    <!-- CHARGEMENT DES MODULES FIREBASE            -->
-    <!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -447,7 +436,7 @@
           // ===============================================
           // LOGIQUE ANTI-CHEAT (SAUVEGARDE INSTANTANÉE)
           // ===============================================
-          const saveScoreToFirebase = async (mergedTimes) => {
+          const saveScoreToFirebase = async (mergedTimes, timeRemaining = globalTime) => {
               if (!fbUser || !fbDb || !window.FirebaseLib) return;
               const isPerfect = mergedTimes.every(t => typeof t === 'number');
               try {
@@ -455,7 +444,8 @@
                   const docRef = doc(fbDb, 'artifacts', 'tacticchess', 'public', 'data', 'scores', `${selectedDate}_${selectedElo}_${fbUser.uid}`);
                   await setDoc(docRef, {
                       date: selectedDate, elo: selectedElo, userId: fbUser.uid, username: username || "Joueur Anonyme",
-                      times: mergedTimes, isPerfect: isPerfect, timestamp: Date.now()
+                      times: mergedTimes, isPerfect: isPerfect, timestamp: Date.now(),
+                      remainingTime: timeRemaining
                   });
               } catch (e) {}
           };
@@ -493,7 +483,7 @@
                   localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
                   return newHistory;
               });
-              saveScoreToFirebase(newTimes);
+              saveScoreToFirebase(newTimes, timeRemaining);
           };
 
           const saveSurvivalProgress = (score, status = 'playing') => {
@@ -538,7 +528,9 @@
                           const statsA = getScoreStats(a.times);
                           const statsB = getScoreStats(b.times);
                           if (statsA.solvedCount !== statsB.solvedCount) return statsB.solvedCount - statsA.solvedCount; 
-                          return statsA.totalTime - statsB.totalTime; 
+                          const timeA = a.remainingTime !== undefined ? a.remainingTime : 0;
+                          const timeB = b.remainingTime !== undefined ? b.remainingTime : 0;
+                          return timeB - timeA; 
                       });
                       setLeaderboard(dayScores);
                       setIsFetchingLb(false);
@@ -1411,7 +1403,7 @@
                                             ))}
                                             <span className="text-slate-600 ml-1">|</span>
                                             <span className={`font-bold ml-1 ${stats.solvedCount === 5 ? 'text-emerald-400' : (stats.solvedCount > 0 ? 'text-amber-400' : 'text-red-400')}`}>
-                                                T={formatTime(stats.totalTime)}
+                                                Reste : {formatTime(score.remainingTime !== undefined ? score.remainingTime : 0)}
                                             </span>
                                         </div>
                                     </div>
