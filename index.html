@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     
-    <!-- Paramètres pour l'installation sur téléphone -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,31 +12,21 @@
     
     <title>Tac-Tic Chess</title>
 
-    <!-- Icône pour le navigateur Web (Générée automatiquement en SVG avec le T orange) -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='%230f172a'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' fill='%23f59e0b' font-family='Arial, sans-serif' font-size='360' font-weight='bold'>T</text></svg>">
     
-    <!-- Icône pour l'écran d'accueil du téléphone -->
     <link rel="apple-touch-icon" href="./icon.png">
     
-    <!-- Fichier Manifest pour Android -->
     <link rel="manifest" href="./manifest.json">
 
-    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
-    <!-- ========================================== -->
-    <!-- CHARGEMENT DES MODULES FIREBASE            -->
-    <!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -73,7 +62,7 @@
         const { useState, useEffect, useRef, useMemo } = React;
 
         // ============================================================================
-        // 1. CONFIGURATION FIREBASE (À REMPLIR AVEC VOS IDENTIFIANTS)
+        // 1. CONFIGURATION FIREBASE
         // ============================================================================
         const monFirebaseConfig = {
             apiKey: "AIzaSyDoUW0pmncV9XcqQfqsOx5BivS0YZs-TMA",
@@ -94,7 +83,7 @@
             900: "./900-1400-5000_problemes_aleatoires.csv",
             1400: "./1400-1900-5000_problemes_aleatoires.csv",
             1900: "./1900-2400-5000_problemes_aleatoires.csv",
-            2400: "./2400-2900-5000_problemes_aleatoires.csv"
+            2400: "./plus2400-5000_problemes_aleatoires.csv"
         };
 
         const FALLBACK_DB = [
@@ -181,7 +170,7 @@
         const IconArrowLeft = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m15 18-6-6 6-6"/></svg>;
         const IconArrowRight = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m9 18 6-6-6-6"/></svg>;
         const IconPlay = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
-        const IconTrophy = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
+        const IconTrophy = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
         const IconUser = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
         const IconFlame = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
 
@@ -410,8 +399,9 @@
             }
           };
 
+          // On fetch le leaderboard dès qu'on est sur home ou leaderboard pour avoir le badge en temps réel
           useEffect(() => {
-              if (view !== 'leaderboard' || !fbDb || !fbUser) return;
+              if ((view !== 'leaderboard' && view !== 'home') || !fbDb || !fbUser) return;
               
               setIsFetchingLb(true);
               const { collection, onSnapshot } = window.FirebaseLib;
@@ -651,9 +641,7 @@
               setCurrentFen(game.fen());
               setSelectedSquare(null);
               animateSolutionAndFail(true);
-              if (gameMode === 'survival') {
-                  setTimeout(() => finishSurvival(true), 1500); 
-              }
+              // Mode Survie : on enlève le Timeout forcé pour laisser l'utilisateur voir la solution via le bouton Terminer
             }
           };
 
@@ -724,23 +712,19 @@
             
             if (gameMode === 'survival') {
                 if (status === 'solved') {
-                    setIsAnimating(true);
-                    playSound('success');
-                    
                     const newScore = currentPuzzleIdx + 1;
                     const newHistory = { ...survivalHistory, [selectedDate]: { score: newScore, status: 'playing', timestamp: Date.now() } };
                     setSurvivalHistory(newHistory);
                     localStorage.setItem('chessSurvival_history', JSON.stringify(newHistory));
-
-                    setTimeout(() => {
-                        let nextIdx = currentPuzzleIdx + 1;
-                        if (nextIdx >= survivalPuzzles.length) {
-                            finishSurvival(true); 
-                        } else {
-                            initPuzzle(nextIdx, survivalPuzzles);
-                        }
-                    }, 800);
                 }
+
+                // Dans les deux cas (résolu ou échoué), on retourne la carte (comme en mode classique)
+                setIsAnimating(true);
+                initialMoveTimeout.current = setTimeout(() => { 
+                    setFlipped(true); 
+                    if(status === 'solved') playSound('success');
+                    setIsAnimating(false); 
+                }, 600);
                 return;
             }
             
@@ -779,9 +763,6 @@
           const surrenderPuzzle = () => {
             if (puzzleState !== 'playing' || isAnimating) return;
             animateSolutionAndFail(false);
-            if (gameMode === 'survival') {
-                setTimeout(() => finishSurvival(true), 1500);
-            }
           };
 
           const prevPuzzle = () => {
@@ -792,8 +773,19 @@
           };
 
           const nextPuzzle = () => {
-            if (isAnimating || gameMode === 'survival') return;
+            if (isAnimating) return;
             let nextIdx = currentPuzzleIdx + 1;
+
+            if (gameMode === 'survival') {
+                if (puzzleState === 'failed') {
+                    finishSurvival(true);
+                } else if (nextIdx >= survivalPuzzles.length) {
+                    finishSurvival(true);
+                } else {
+                    initPuzzle(nextIdx, survivalPuzzles);
+                }
+                return;
+            }
             
             if (!isPracticeMode) {
                 while(nextIdx < 5 && puzzleTimes[nextIdx] !== null) nextIdx++;
@@ -922,6 +914,24 @@
           }
 
           const renderHome = () => {
+            // Cacul de la position actuelle du joueur dans le classement
+            let myRank = -1;
+            if (gameMode === 'daily') {
+                myRank = leaderboard.findIndex(s => s.userId === fbUser?.uid);
+            } else {
+                myRank = survivalLeaderboard.findIndex(s => s.userId === fbUser?.uid);
+            }
+
+            const getTrophyColor = (isCompleted, isPerfect, isSurv) => {
+                if (myRank === 0) return 'text-[#FFD700] opacity-100 drop-shadow-[0_0_8px_rgba(255,215,0,0.8)]'; // Or
+                if (myRank === 1) return 'text-[#E0E0E0] opacity-100 drop-shadow-[0_0_8px_rgba(224,224,224,0.6)]'; // Argent
+                if (myRank === 2) return 'text-[#CD7F32] opacity-100 drop-shadow-[0_0_8px_rgba(205,127,50,0.6)]'; // Bronze
+                
+                // Couleurs par défaut si non classé dans le top 3
+                if (isSurv) return 'text-amber-500 opacity-10';
+                return isPerfect ? 'text-emerald-400 opacity-20' : (isCompleted ? 'text-red-400 opacity-20' : 'text-amber-400 opacity-20');
+            };
+
             if (gameMode === 'survival') {
                 const todaySurv = survivalHistory[selectedDate];
                 const hasPlayedSurv = todaySurv !== undefined;
@@ -930,8 +940,6 @@
                 
                 return (
                     <div className="flex flex-col items-center p-4 sm:p-6 space-y-5 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto pb-20">
-                        <h1 className="text-4xl font-black text-center mt-4 sm:mt-6 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
-                        
                         <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 mt-2 shadow-inner">
                             <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
                             <button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
@@ -951,7 +959,9 @@
                         </div>
 
                         <div className={`w-full p-6 rounded-2xl border flex flex-col items-center shadow-xl relative overflow-hidden ${isCompletedSurv ? 'bg-slate-800 border-slate-700' : 'bg-gradient-to-br from-amber-900/40 to-slate-800 border-amber-500/50'}`}>
-                            <div className="absolute top-0 right-0 p-3 opacity-10 text-amber-500"><IconFlame size={60} /></div>
+                            <div className={`absolute top-0 right-0 p-3 transition-colors duration-500 ${getTrophyColor(isCompletedSurv, false, true)}`}>
+                                {myRank >= 0 && myRank <= 2 ? <IconTrophy size={60} /> : <IconFlame size={60} />}
+                            </div>
                             
                             <h2 className="text-2xl font-black text-amber-400 mb-2">Mode Survie</h2>
                             <p className="text-sm text-slate-300 text-center mb-6">~175 Problèmes par semaine.<br/>1 seule erreur permise.<br/>Aucune limite de temps.</p>
@@ -1030,7 +1040,6 @@
 
             return (
               <div className="flex flex-col items-center p-4 sm:p-6 space-y-5 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto pb-20">
-                <h1 className="text-4xl font-black text-center mt-4 sm:mt-6 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
                 
                 <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 mt-2 shadow-inner">
                     <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
@@ -1119,7 +1128,9 @@
                       <div className="flex justify-center p-6"><div className="w-8 h-8 border-4 border-amber-400 border-t-transparent rounded-full animate-spin"></div></div>
                   ) : isStarted ? (
                     <div className={`p-4 sm:p-6 rounded-xl border shadow-xl w-full relative overflow-hidden ${isPerfect ? 'bg-slate-800 border-emerald-600/50 shadow-emerald-900/20' : (isCompleted ? 'bg-slate-800 border-red-600/50 shadow-red-900/20' : 'bg-slate-800 border-amber-600/50 shadow-amber-900/20')}`}>
-                      <div className={`absolute top-0 right-0 p-3 opacity-20 ${isPerfect ? 'text-emerald-400' : (isCompleted ? 'text-red-400' : 'text-amber-400')}`}><IconTrophy /></div>
+                      <div className={`absolute top-0 right-0 p-3 transition-colors duration-500 ${getTrophyColor(isCompleted, isPerfect, false)}`}>
+                          <IconTrophy />
+                      </div>
                       <h2 className={`text-xl font-bold mb-4 ${isPerfect ? 'text-emerald-400' : (isCompleted ? 'text-red-400' : 'text-amber-400')}`}>
                         {isPerfect ? "Tous résolus !" : (isCompleted ? "Session terminée" : "Session en cours...")}
                       </h2>
@@ -1408,7 +1419,9 @@
             const hasRemainingNAs = puzzleTimes.some(t => t === 'NA');
 
             let nextBtnText = "Suivant";
-            if (!isPracticeMode) {
+            if (gameMode === 'survival') {
+                nextBtnText = puzzleState === 'failed' ? "Terminer la Survie" : "Problème Suivant";
+            } else if (!isPracticeMode) {
                 let tempIdx = currentPuzzleIdx + 1;
                 while(tempIdx < 5 && puzzleTimes[tempIdx] !== null) tempIdx++;
                 nextBtnText = tempIdx >= 5 ? "Terminer" : "Problème Suivant";
@@ -1423,7 +1436,6 @@
             return (
               <div className="flex flex-col items-center w-full max-w-md mx-auto h-[100dvh] bg-slate-900 text-slate-100 p-4 pb-4 overflow-hidden" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
                 
-                {/* EN-TÊTE AVEC TITRE INTÉGRÉ ET FIXE */}
                 <div className="w-full flex justify-between items-center mb-4 shrink-0">
                     <button onClick={() => {
                         if (gameMode === 'survival') { finishSurvival(); }
@@ -1492,10 +1504,9 @@
                 )}
 
                 <div className="flex-1 w-full flex items-center justify-center">
-                  {/* RETOUR DU CODE ORIGINAL MAX-W-[420px] SANS LE MIN() CALCULÉ */}
                   <div className="w-full max-w-[420px] max-h-full aspect-square relative">
                     <div className={`w-full h-full transition-transform duration-700 preserve-3d cursor-pointer ${flipped ? 'rotate-y-180' : ''}`} onClick={() => { 
-                        if(puzzleState !== 'playing' && !isAnimating && gameMode !== 'survival') { 
+                        if(puzzleState !== 'playing' && !isAnimating) { 
                             setFlipped(!flipped); 
                             playSound('flip'); 
                         } 
@@ -1516,7 +1527,6 @@
 
                 <div className="w-full shrink-0 flex flex-col gap-2 mt-2">
                   
-                  {/* BOUTONS D'HISTORIQUE RÉDUITS EN HAUTEUR (h-12 au lieu de h-16) */}
                   <div className="flex justify-between items-center bg-slate-800 p-1.5 rounded-xl border border-slate-700 shadow-md w-full h-12">
                       <button onClick={() => navigateHistory(-1)} disabled={historyIndex === 0 || isAnimating} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
                           <IconArrowLeft size={24} />
@@ -1533,7 +1543,6 @@
 
                   {gameMode === 'daily' && (
                       puzzleState === 'playing' ? (
-                          // BOUTON D'ACTION PRINCIPAL RÉDUIT EN HAUTEUR (py-2.5 au lieu de py-4, text-base au lieu de text-lg)
                           <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-2.5 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-base shadow-lg">
                               Voir la solution (NA)
                           </button>
@@ -1550,7 +1559,9 @@
                               Abandonner la Survie
                           </button>
                       ) : (
-                           <div className="h-[44px] flex items-center justify-center text-slate-400 font-bold animate-pulse text-sm">Validation en cours...</div>
+                          <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg text-base transition">
+                              {nextBtnText}
+                          </button>
                       )
                   )}
 
