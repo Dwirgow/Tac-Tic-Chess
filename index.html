@@ -181,16 +181,16 @@
             return { solvedCount, totalTime };
         };
 
-        // Nouveau formatage PGN robuste (Anglais Standard + Fallback brut)
+        // Formatage PGN robuste : Anglais Standard (Nf3, Bc4...) + Fallback d'urgence
         const formatPV = (fen, uciLine) => {
-            const rawMoves = uciLine.trim().split(' ').slice(0, 5); // Les 5 meilleurs coups
+            const rawMoves = uciLine.trim().split(' ').slice(0, 5); // Conserve les 5 meilleurs coups
             if (!window.Chess || !fen) return rawMoves.join(' ');
             
             try {
                 const tempGame = new window.Chess(fen);
                 let sanMoves = [];
                 for (let uci of rawMoves) {
-                    if (uci.length < 4 || uci.length > 5) break; // Arrêt propre si on perd la synchronisation
+                    if (uci.length < 4 || uci.length > 5) break; 
                     
                     const move = tempGame.move({ 
                         from: uci.substring(0, 2), 
@@ -199,15 +199,14 @@
                     });
                     
                     if (!move) {
-                        // Si le coup est illégal selon chess.js, on pousse la notation brute (e.g. e2e4) et on arrête
-                        sanMoves.push(uci);
+                        sanMoves.push(uci); // Fallback si le coup est considéré illégal par chess.js
                         break;
                     }
                     sanMoves.push(move.san);
                 }
                 return sanMoves.length > 0 ? sanMoves.join(' ') : rawMoves.join(' ');
             } catch(e) {
-                // Fallback ultime : On retourne juste la notation UCI brute de Stockfish (impossible de bloquer)
+                // Fallback ultime en cas de crash : on renvoie le texte brut Stockfish (impossible de bloquer)
                 return rawMoves.join(' ');
             }
         };
@@ -316,15 +315,15 @@
           const [flipped, setFlipped] = useState(false);
           const initialMoveTimeout = useRef(null);
 
-          const boardRef = useRef(null);
-          const activeDrag = useRef(null);
-          const [ghostPiece, setGhostPiece] = useState(null);
-
           // ETATS POUR STOCKFISH
           const [engineWorker, setEngineWorker] = useState(null);
           const [analysis, setAnalysis] = useState({ eval: '', pv: '' });
           const [isAnalysisActive, setIsAnalysisActive] = useState(false);
           const currentFenRef = useRef('');
+
+          const boardRef = useRef(null);
+          const activeDrag = useRef(null);
+          const [ghostPiece, setGhostPiece] = useState(null);
 
           const getHistoryKey = (date, elo) => `${date}_${elo}`;
 
@@ -338,7 +337,6 @@
                     await new Promise(r => script.onload = r);
                 }
 
-                // Init Firebase
                 let database = null;
                 const checkFirebase = setInterval(async () => {
                     if (window.FirebaseLib) {
@@ -358,13 +356,11 @@
                     }
                 }, 100);
 
-                // Init Stockfish Worker
                 try {
                     const blob = new Blob(["importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');"], {type: 'application/javascript'});
                     const worker = new Worker(URL.createObjectURL(blob));
                     worker.onmessage = (e) => {
                         const line = e.data;
-                        // Correction: On cherche " pv " avec des espaces pour ne pas matcher avec "multipv"
                         if (typeof line === 'string' && line.startsWith('info depth') && line.includes('score') && line.includes(' pv ')) {
                             const depthMatch = line.match(/depth (\d+)/);
                             if (depthMatch && parseInt(depthMatch[1], 10) > 5) {
@@ -386,7 +382,6 @@
                                 const pvMatch = line.match(/ pv (.*)/);
                                 let pvStr = '';
                                 if (pvMatch) {
-                                    // Utilise la nouvelle fonction robuste
                                     pvStr = formatPV(currentFenRef.current, pvMatch[1]);
                                 }
                                 setAnalysis({ eval: scoreStr, pv: pvStr });
@@ -412,7 +407,6 @@
             };
           }, []);
 
-          // MISE A JOUR DE LA REF FEN POUR LE WORKER
           useEffect(() => {
               currentFenRef.current = currentFen;
               
@@ -429,12 +423,15 @@
                   if (databases[selectedElo].length > 0) return; 
                   setIsLoadingDB(true);
                   try {
+                      // Restauration du contournement de cache original tel que demandé
                       const response = await fetch(ELO_URLS[selectedElo] + "?v=1.0");
                       if (!response.ok) throw new Error("Fichier introuvable");
                       const textData = await response.text();
                       const parsedData = parseCSV(textData);
+                      if (parsedData === FALLBACK_DB) throw new Error("Fichier vide ou mal formaté");
                       setDatabases(prev => ({...prev, [selectedElo]: parsedData}));
                   } catch (e) {
+                      // On intercepte silencieusement l'erreur (qui se produit uniquement dans la prévisualisation à cause du blob)
                       setDatabases(prev => ({...prev, [selectedElo]: FALLBACK_DB})); 
                   } finally {
                       setIsLoadingDB(false);
@@ -452,8 +449,10 @@
                   await Promise.all(missingElos.map(async (elo) => {
                       try {
                           const res = await fetch(ELO_URLS[elo] + "?v=1.0");
+                          if (!res.ok) throw new Error("Erreur réseau");
                           const text = await res.text();
-                          currentDbs[elo] = parseCSV(text);
+                          const parsed = parseCSV(text);
+                          currentDbs[elo] = parsed;
                       } catch(e) {
                           currentDbs[elo] = FALLBACK_DB;
                       }
@@ -640,7 +639,6 @@
             const newGame = new window.Chess(puz.fen);
             if (initialMoveTimeout.current) clearTimeout(initialMoveTimeout.current);
 
-            // Stop analysis when new puzzle loads
             setIsAnalysisActive(false);
             if (engineWorker) engineWorker.postMessage('stop');
 
@@ -1099,7 +1097,6 @@
             );
           }
 
-          // COMPOSANT MODAL DES PARAMETRES
           const SettingsModal = () => {
               if (!showSettings) return null;
               return (
@@ -1807,7 +1804,7 @@
                   </div>
                 </div>
 
-                {/* ================= BARRE STOCKFISH ================= */}
+                {/* ================= BARRE STOCKFISH (LIGNE PGN ANGLAISE CLASSIQUE) ================= */}
                 {puzzleState !== 'playing' && (
                   <div className="w-full shrink-0 flex justify-center mt-2 h-7 sm:h-9">
                       <div className="w-full max-w-[420px] bg-slate-800 rounded-lg border border-slate-700 flex items-center px-3 justify-between shadow-inner">
