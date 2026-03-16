@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     
-    <!-- Paramètres pour l'installation sur téléphone -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,31 +12,21 @@
     
     <title>Tac-Tic Chess</title>
 
-    <!-- Icône pour le navigateur Web (Ordinateur) -->
     <link rel="icon" type="image/png" href="./icon.png">
     
-    <!-- Icône pour l'écran d'accueil du téléphone -->
     <link rel="apple-touch-icon" href="./icon.png">
     
-    <!-- Fichier Manifest pour Android -->
     <link rel="manifest" href="./manifest.json">
 
-    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
-    <!-- ========================================== -->
-    <!-- CHARGEMENT DES MODULES FIREBASE            -->
-    <!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -146,9 +135,43 @@
                 };
                 return wikiUrls[pieceChar];
             } else {
-                // Utilisation du dépôt GitHub officiel de Lichess pour un accès direct et garanti aux SVGs
                 return `https://raw.githubusercontent.com/lichess-org/lila/master/public/piece/${theme}/${color}${type}.svg`;
             }
+        };
+
+        // ============================================================================
+        // FONCTIONS D'AIDE ET CALCUL DU TEMPS
+        // ============================================================================
+        
+        // Identifie si un score correspond à un échec (NA ou NA_45)
+        const isFailedScore = (t) => typeof t === 'string' && t.startsWith('NA') && t !== 'NA_solved';
+
+        const formatTime = (secs) => {
+            if (secs === 'NA_solved' || (typeof secs === 'string' && secs.includes('_NA'))) return 'NA';
+            if (isFailedScore(secs)) return 'NA';
+            if (secs == null) return '--:--';
+            const m = Math.floor(secs / 60).toString();
+            const s = (secs % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        };
+
+        const getScoreStats = (timesArray) => {
+            let solvedCount = 0;
+            let totalTime = 0;
+            timesArray.forEach(t => {
+                if (typeof t === 'number') {
+                    solvedCount++;
+                    totalTime += t;
+                } else if (isFailedScore(t)) {
+                    // Extraction du temps caché dans NA_xx
+                    const parts = t.split('_');
+                    if (parts.length > 1) {
+                        const timeVal = parseInt(parts[1], 10);
+                        if (!isNaN(timeVal)) totalTime += timeVal;
+                    }
+                }
+            });
+            return { solvedCount, totalTime };
         };
 
         // ============================================================================
@@ -200,20 +223,6 @@
           const month = String(dateObj.getMonth() + 1).padStart(2, '0');
           const day = String(dateObj.getDate()).padStart(2, '0');
           return `${year}-${month}-${day}`;
-        };
-
-        const formatTime = (secs) => {
-            if (secs === 'NA' || secs === 'NA_solved' || (typeof secs === 'string' && secs.includes('_NA'))) return 'NA';
-            if (secs == null) return '--:--';
-            const m = Math.floor(secs / 60).toString();
-            const s = (secs % 60).toString().padStart(2, '0');
-            return `${m}:${s}`;
-        };
-
-        const getScoreStats = (timesArray) => {
-            const solvedCount = timesArray.filter(t => typeof t === 'number').length;
-            const totalTime = timesArray.reduce((sum, t) => (typeof t === 'number' ? sum + t : sum), 0);
-            return { solvedCount, totalTime };
         };
 
         // Icônes SVG
@@ -273,7 +282,7 @@
 
           // ETATS DES THEMES
           const [boardTheme, setBoardTheme] = useState(localStorage.getItem('tactic_boardTheme') || 'vert');
-          const [pieceTheme, setPieceTheme] = useState(localStorage.getItem('tactic_pieceTheme') || 'wikipedia');
+          const [pieceTheme, setPieceTheme] = useState(localStorage.getItem('tactic_pieceTheme') || 'alpha');
           const [showSettings, setShowSettings] = useState(false);
 
           const [gameMode, setGameMode] = useState('daily'); 
@@ -514,7 +523,11 @@
                 setPuzzleTimes(prev => {
                   const newTimes = [...prev];
                   if (!isPracticeMode) {
-                      for (let i = currentPuzzleIdx; i < 5; i++) if (newTimes[i] === null) newTimes[i] = 'NA';
+                      for (let i = currentPuzzleIdx; i < 5; i++) {
+                          if (newTimes[i] === null) {
+                              newTimes[i] = (i === currentPuzzleIdx) ? `NA_${currentPuzzleTime}` : 'NA_0';
+                          }
+                      }
                       saveDailyProgress(newTimes, 0);
                   }
                   return newTimes;
@@ -656,10 +669,10 @@
                 }
             } else {
                 savedTime = 300; 
-                const isCorrection = initialTimes.some(t => t === 'NA');
+                const isCorrection = initialTimes.some(t => isFailedScore(t));
                 if (isCorrection) {
                     for(let i = 0; i < 5; i++) {
-                        if (initialTimes[i] === 'NA') { firstUnsolved = i; break; }
+                        if (isFailedScore(initialTimes[i])) { firstUnsolved = i; break; }
                     }
                 }
             }
@@ -678,7 +691,7 @@
                 setPuzzleTimes(prev => { 
                     const newTimes = [...prev]; 
                     if (!isPracticeMode) {
-                        newTimes[currentPuzzleIdx] = 'NA'; 
+                        newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`; 
                         saveDailyProgress(newTimes); 
                     }
                     return newTimes; 
@@ -862,7 +875,7 @@
 
               if (status === 'solved') {
                   if (isPracticeMode) {
-                      if (oldVal === 'NA' || oldVal === 'NA_solved' || (typeof oldVal === 'string' && oldVal.includes('_NA'))) {
+                      if (oldVal === 'NA_solved' || (typeof oldVal === 'string' && oldVal.includes('_NA'))) {
                           newTimes[currentPuzzleIdx] = 'NA_solved';
                       } else if (typeof oldVal === 'number') {
                           newTimes[currentPuzzleIdx] = Math.min(currentPuzzleTime, oldVal);
@@ -873,7 +886,7 @@
                       newTimes[currentPuzzleIdx] = currentPuzzleTime;
                   }
               } else {
-                  if (!isPracticeMode) newTimes[currentPuzzleIdx] = 'NA';
+                  if (!isPracticeMode) newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`;
               }
               
               if (!isPracticeMode) {
@@ -930,14 +943,14 @@
             } else {
                 const hKey = getHistoryKey(selectedDate, selectedElo);
                 const histDay = history[hKey];
-                const isCorrectionSession = histDay && (histDay.officialTimes || histDay.times).some(t => t === 'NA');
+                const isCorrectionSession = histDay && (histDay.officialTimes || histDay.times).some(t => isFailedScore(t));
                 
                 if (isCorrectionSession) {
-                    const remainingNA = puzzleTimes.findIndex((t, idx) => t === 'NA' && idx > currentPuzzleIdx);
+                    const remainingNA = puzzleTimes.findIndex((t, idx) => isFailedScore(t) && idx > currentPuzzleIdx);
                     if (remainingNA !== -1) {
                         initPuzzle(remainingNA);
                     } else {
-                        const anyNA = puzzleTimes.findIndex(t => t === 'NA');
+                        const anyNA = puzzleTimes.findIndex(t => isFailedScore(t));
                         if (anyNA !== -1) initPuzzle(anyNA);
                         else finishDaily(true); 
                     }
@@ -1294,7 +1307,7 @@
                         {currentTimes.map((t, i) => {
                           const isPracticeSuccess = t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'));
                           let colorClass = 'text-emerald-400';
-                          if (t === 'NA') colorClass = 'text-red-400';
+                          if (isFailedScore(t)) colorClass = 'text-red-400';
                           else if (t === null) colorClass = 'text-slate-600';
 
                           return (
@@ -1403,8 +1416,8 @@
                                         <div className="pl-9 font-mono text-[11px] sm:text-xs text-slate-400 flex items-center flex-wrap gap-x-1.5">
                                             {score.times.map((t, i) => (
                                                 <React.Fragment key={i}>
-                                                    <span className={t === 'NA' ? 'text-red-400' : (typeof t === 'number' ? 'text-emerald-400' : 'text-slate-500')}>
-                                                        {t === 'NA' ? 'NA' : (t === null ? '--:--' : formatTime(t))}
+                                                    <span className={isFailedScore(t) ? 'text-red-400' : (typeof t === 'number' ? 'text-emerald-400' : 'text-slate-500')}>
+                                                        {isFailedScore(t) ? 'NA' : (t === null ? '--:--' : formatTime(t))}
                                                     </span>
                                                     {i < 4 && <span className="text-slate-600">|</span>}
                                                 </React.Fragment>
@@ -1467,7 +1480,12 @@
                 const officialTimes = history[hKey] ? (history[hKey].officialTimes || history[hKey].times) : puzzleTimes;
                 const officialStats = getScoreStats(officialTimes);
                 
-                const emojiBlocks = officialTimes.map(t => typeof t === 'number' ? '🟢' : (t === 'NA' ? '🔴' : '⚪')).join('');
+                const emojiBlocks = officialTimes.map(t => {
+                    if (typeof t === 'number') return '🟢';
+                    if (isFailedScore(t)) return '🔴';
+                    return '⚪';
+                }).join('');
+                
                 const text = `♟️ Tac-Tic Chess (${selectedElo} Elo) - ${selectedDate}\n${emojiBlocks}\n${officialStats.solvedCount === 5 ? `⏱️ Temps : ${formatTime(officialStats.totalTime)}` : `❌ Score Officiel (${officialStats.solvedCount}/5)`}\nJouez ici : ${window.location.href}`;
                 navigator.clipboard.writeText(text).then(() => alert("Votre score officiel a été copié !"));
             };
@@ -1487,7 +1505,7 @@
                     const eloText = dailyPuzzles[i] ? dailyPuzzles[i].explanation.split('\n')[0].split('|')[1]?.trim() : '';
                     const isPracticeSuccess = t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'));
                     let colorClass = 'text-emerald-400';
-                    if (t === 'NA') colorClass = 'text-red-400';
+                    if (isFailedScore(t)) colorClass = 'text-red-400';
                     else if (isPracticeSuccess) colorClass = 'text-emerald-400';
 
                     return (
@@ -1576,8 +1594,8 @@
             
             const hKey = getHistoryKey(selectedDate, selectedElo);
             const histDay = history[hKey];
-            const isCorrectionSession = isPracticeMode && histDay && (histDay.officialTimes || histDay.times).some(t => t === 'NA');
-            const hasRemainingNAs = puzzleTimes.some(t => t === 'NA');
+            const isCorrectionSession = isPracticeMode && histDay && (histDay.officialTimes || histDay.times).some(t => isFailedScore(t));
+            const hasRemainingNAs = puzzleTimes.some(t => isFailedScore(t));
 
             let nextBtnText = "Suivant";
             if (gameMode === 'survival') {
@@ -1603,6 +1621,7 @@
             return (
               <div className="flex flex-col items-center w-full max-w-md mx-auto h-[100dvh] bg-slate-900 text-slate-100 p-4 pb-4 overflow-hidden" onPointerMove={handleGlobalPointerMove} onPointerUp={handleGlobalPointerUp} onPointerLeave={handleGlobalPointerUp}>
                 
+                {/* EN-TÊTE AVEC TITRE INTÉGRÉ ET FIXE */}
                 <div className="w-full flex justify-between items-center mb-4 shrink-0">
                     <button onClick={() => {
                         if (gameMode === 'survival') { setView('home'); }
@@ -1645,7 +1664,7 @@
                                   dotClass = 'bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.6)] scale-110'; 
                               }
                           } 
-                          else if (puzzleTimes[i] === 'NA') {
+                          else if (isFailedScore(puzzleTimes[i])) {
                               dotClass = 'bg-red-900/50 text-red-400 border border-red-500/50';
                           } else if (isPracticeSuccess) {
                               dotClass = 'bg-emerald-900/50 text-emerald-400 border border-emerald-500/50';
