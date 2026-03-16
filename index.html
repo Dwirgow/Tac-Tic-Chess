@@ -153,7 +153,6 @@
         // FONCTIONS DE FORMATAGE ET PGN
         // ============================================================================
         
-        // Identifie si un score correspond à un échec (NA ou NA_45)
         const isFailedScore = (t) => typeof t === 'string' && t.startsWith('NA') && t !== 'NA_solved';
 
         const formatTime = (secs) => {
@@ -173,7 +172,6 @@
                     solvedCount++;
                     totalTime += t;
                 } else if (isFailedScore(t)) {
-                    // Extraction du temps caché dans NA_xx
                     const parts = t.split('_');
                     if (parts.length > 1) {
                         const timeVal = parseInt(parts[1], 10);
@@ -184,6 +182,42 @@
             return { solvedCount, totalTime };
         };
 
+        // Formatage PGN propre (1.e4 e5 2.Nf3...)
+        const formatPV = (fen, uciLine) => {
+            const rawMoves = uciLine.trim().split(' ').slice(0, 5); 
+            if (!window.Chess || !fen) return rawMoves.join(' ');
+            
+            try {
+                const tempGame = new window.Chess(fen);
+                let sanMoves = [];
+                for (let uci of rawMoves) {
+                    if (uci.length < 4 || uci.length > 5) break; 
+                    
+                    const turn = tempGame.turn();
+                    const moveNum = tempGame.moveNumber();
+                    const prefix = turn === 'w' ? `${moveNum}.` : (sanMoves.length === 0 ? `${moveNum}...` : '');
+                    
+                    const move = tempGame.move({ 
+                        from: uci.substring(0, 2), 
+                        to: uci.substring(2, 4), 
+                        promotion: uci.length === 5 ? uci[4] : 'q' 
+                    });
+                    
+                    if (!move) {
+                        sanMoves.push(uci);
+                        break;
+                    }
+                    sanMoves.push(`${prefix}${move.san}`);
+                }
+                return sanMoves.length > 0 ? sanMoves.join(' ') : rawMoves.join(' ');
+            } catch(e) {
+                return rawMoves.join(' ');
+            }
+        };
+
+        // ============================================================================
+        // TIREUR ALÉATOIRE SÉCURISÉ
+        // ============================================================================
         const getSeededRandom = (seedStr) => {
             let h = 0xdeadbeef;
             for(let i = 0; i < seedStr.length; i++)
@@ -238,35 +272,6 @@
         const IconFlame = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-2.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
         const IconSettings = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
         const IconSearch = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>;
-
-        const parseCSV = (textData) => {
-            try { return JSON.parse(textData); } catch (e) {}
-            const lines = textData.replace(/\r/g, '').trim().split('\n');
-            const headers = lines[0].split(',');
-            const idIdx = headers.indexOf('PuzzleId');
-            const fenIdx = headers.indexOf('FEN');
-            const movesIdx = headers.indexOf('Moves');
-            const ratingIdx = headers.indexOf('Rating');
-            const parsedData = [];
-            if (idIdx > -1 && fenIdx > -1 && movesIdx > -1) {
-                for (let i = 1; i < lines.length; i++) {
-                    const cols = lines[i].split(',');
-                    if (cols.length >= 4) {
-                        const fen = cols[fenIdx];
-                        const color = fen.includes(' b ') ? 'w' : 'b';
-                        parsedData.push({
-                            id: cols[idIdx],
-                            elo: parseInt(cols[ratingIdx]),
-                            fen: fen,
-                            moves: cols[movesIdx].split(' '),
-                            explanation: `Lichess #${cols[idIdx]} | ~${cols[ratingIdx]} Elo`,
-                            color: color
-                        });
-                    }
-                }
-            }
-            return parsedData.length > 0 ? parsedData : FALLBACK_DB;
-        };
 
         function App() {
           const [isResourcesLoaded, setIsResourcesLoaded] = useState(false);
@@ -385,8 +390,8 @@
                                 const pvMatch = line.match(/ pv (.*)/);
                                 let pvStr = '';
                                 if (pvMatch) {
-                                    // Analyse en anglais standard (limité à 5 coups)
-                                    pvStr = pvMatch[1].trim().split(' ').slice(0, 5).join(' ');
+                                    // Utilisation de la notation classique 1.e4 e5
+                                    pvStr = formatPV(currentFenRef.current, pvMatch[1]);
                                 }
                                 setAnalysis({ eval: scoreStr, pv: pvStr });
                             }
@@ -427,7 +432,6 @@
                   if (databases[selectedElo].length > 0) return; 
                   setIsLoadingDB(true);
                   try {
-                      // RÈGLE 2 : Contournement du cache avec ?v=1.0 STRICTEMENT CONSERVÉ
                       const response = await fetch(ELO_URLS[selectedElo] + "?v=1.0");
                       if (!response.ok) throw new Error("Fichier introuvable");
                       const textData = await response.text();
@@ -451,8 +455,10 @@
                   await Promise.all(missingElos.map(async (elo) => {
                       try {
                           const res = await fetch(ELO_URLS[elo] + "?v=1.0");
+                          if (!res.ok) throw new Error("Erreur réseau");
                           const text = await res.text();
-                          currentDbs[elo] = parseCSV(text);
+                          const parsed = parseCSV(text);
+                          currentDbs[elo] = parsed;
                       } catch(e) {
                           currentDbs[elo] = FALLBACK_DB;
                       }
@@ -642,7 +648,7 @@
             setIsAnalysisActive(false);
             if (engineWorker) engineWorker.postMessage('stop');
 
-            setCurrentLine(puz.moves); // Initialise la variante avec les coups officiels
+            setCurrentLine(puz.moves); 
             setGame(newGame);
             setCurrentFen(newGame.fen()); 
             setCurrentPuzzleIdx(idx);
@@ -766,12 +772,11 @@
             const startAnimation = () => {
               if (didMakeWrongMove) { game.undo(); setCurrentFen(game.fen()); }
               let tempIndex = historyIndex;
-              const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
 
               const playNext = () => {
-                if (tempIndex >= currentPuzzle.moves.length) {
+                if (tempIndex >= currentLine.length) {
                   setHistoryIndex(tempIndex);
-                  setMaxHistoryIndex(tempIndex); // Met à jour maxHistory après l'animation officielle
+                  setMaxHistoryIndex(tempIndex);
                   initialMoveTimeout.current = setTimeout(() => { 
                       setFlipped(true); 
                       playSound('fail'); 
@@ -779,7 +784,7 @@
                   }, 600);
                   return;
                 }
-                const nextUci = currentPuzzle.moves[tempIndex];
+                const nextUci = currentLine[tempIndex];
                 const m = game.move({ from: nextUci.substring(0, 2), to: nextUci.substring(2, 4), promotion: nextUci.length === 5 ? nextUci[4] : 'q' });
                 
                 if (m) {
@@ -791,6 +796,7 @@
                 setCurrentFen(game.fen());
                 tempIndex++;
                 setHistoryIndex(tempIndex);
+                setMaxHistoryIndex(tempIndex);
                 initialMoveTimeout.current = setTimeout(playNext, 500);
               };
 
@@ -807,27 +813,29 @@
             const fromAlg = posToAlgebraic(fromR, fromC);
             const toAlg = posToAlgebraic(toR, toC);
 
-            // LOGIQUE DE COUP LIBRE (Pendant l'analyse)
-            if (puzzleState !== 'playing') {
-                if (isAnalysisActive) {
-                    const moveAttempt = game.move({ from: fromAlg, to: toAlg, promotion: 'q' });
-                    if (moveAttempt) {
-                        // On crée la nouvelle variante en coupant la ligne actuelle et en ajoutant le nouveau coup
-                        const uci = fromAlg + toAlg + (moveAttempt.promotion ? moveAttempt.promotion : '');
-                        const newCurrentLine = currentLine.slice(0, historyIndex);
-                        newCurrentLine.push(uci);
-                        setCurrentLine(newCurrentLine);
-                        
-                        setHistoryIndex(historyIndex + 1);
-                        setMaxHistoryIndex(historyIndex + 1);
-                        
-                        if (game.in_check()) playSound('check');
-                        else if (moveAttempt.captured) playSound('capture');
-                        else playSound('move');
-                        
-                        setCurrentFen(game.fen());
-                    }
+            // LOGIQUE DE COUP LIBRE PENDANT L'ANALYSE
+            if (isAnalysisActive) {
+                const moveAttempt = game.move({ from: fromAlg, to: toAlg, promotion: 'q' });
+                if (moveAttempt) {
+                    const uci = fromAlg + toAlg + (moveAttempt.promotion ? moveAttempt.promotion : '');
+                    const newCurrentLine = currentLine.slice(0, historyIndex);
+                    newCurrentLine.push(uci);
+                    setCurrentLine(newCurrentLine);
+                    
+                    setHistoryIndex(historyIndex + 1);
+                    setMaxHistoryIndex(historyIndex + 1);
+                    
+                    if (game.in_check()) playSound('check');
+                    else if (moveAttempt.captured) playSound('capture');
+                    else playSound('move');
+                    
+                    setCurrentFen(game.fen());
                 }
+                setSelectedSquare(null);
+                return;
+            }
+
+            if (puzzleState !== 'playing') {
                 setSelectedSquare(null);
                 return;
             }
@@ -886,14 +894,13 @@
             if (e.button !== undefined && e.button !== 0) return;
             if (isAnimating || !game) return;
             
-            // Empêche de jouer si en pause pendant le mode puzzle normal
-            if (puzzleState === 'playing' && isPaused) return; 
+            if (puzzleState === 'playing' && isPaused && !isAnalysisActive) return; 
 
-            // Si le problème est fini, on ne peut bouger des pièces que si l'analyse est active
+            // Si l'analyse n'est pas active et que le problème est fini, on ne bouge rien
             if (puzzleState !== 'playing' && !isAnalysisActive) return;
 
-            // Si on joue le puzzle et qu'on n'est pas au bout de la ligne
-            if (puzzleState === 'playing' && historyIndex !== maxHistoryIndex) { 
+            // Pendant le jeu, force à être au bout de la ligne
+            if (puzzleState === 'playing' && historyIndex !== maxHistoryIndex && !isAnalysisActive) { 
                 navigateHistory(maxHistoryIndex - historyIndex); 
                 return; 
             }
@@ -903,9 +910,11 @@
             const currentPuzzleColor = dailyPuzzles[currentPuzzleIdx].color;
             
             // Le joueur peut bouger toutes les pièces pendant l'analyse libre
-            const isPlayerPiece = puzzleState === 'playing' 
-                ? (piece && piece.color === currentPuzzleColor) 
-                : (piece && piece.color === game.turn());
+            const isPlayerPiece = isAnalysisActive 
+                ? (piece && piece.color === game.turn()) 
+                : (puzzleState === 'playing' 
+                    ? (piece && piece.color === currentPuzzleColor) 
+                    : false);
 
             if (!isPlayerPiece) {
               if (selectedSquare) processMove(selectedSquare.r, selectedSquare.c, r, c);
@@ -1112,8 +1121,7 @@
             let newIndex = historyIndex + dir;
             if (newIndex < 0) newIndex = 0; 
             
-            // La limite dépend si on est en train de jouer ou si on explore la ligne courante
-            const limit = puzzleState === 'playing' ? maxHistoryIndex : currentLine.length;
+            const limit = (puzzleState === 'playing' && !isAnalysisActive) ? maxHistoryIndex : currentLine.length;
             if (newIndex > limit) newIndex = limit;
             
             setHistoryIndex(newIndex);
@@ -1122,7 +1130,7 @@
             const newGame = new window.Chess(currentPuzzle.fen);
             let lastMove = null;
             
-            const lineToUse = puzzleState === 'playing' ? currentPuzzle.moves : currentLine;
+            const lineToUse = (puzzleState === 'playing' && !isAnalysisActive) ? currentPuzzle.moves : currentLine;
             
             for (let i = 0; i < newIndex; i++) {
               const m = lineToUse[i];
@@ -1664,7 +1672,6 @@
               for (let c = 0; c < 8; c++) {
                 const alg = posToAlgebraic(r, c);
                 const piece = game ? game.get(alg) : null;
-                // on garde charPiece original ('p' pour pion noir, 'P' pour blanc) pour getPieceUrl
                 if (piece) displayBoard[r][c] = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
               }
             }
@@ -1684,7 +1691,7 @@
                       const isDragged = ghostPiece?.originR === r && ghostPiece?.originC === c;
                       
                       let isLastMove = false;
-                      const lineToUse = puzzleState === 'playing' ? currentPuzzle.moves : currentLine;
+                      const lineToUse = (puzzleState === 'playing' && !isAnalysisActive) ? currentPuzzle.moves : currentLine;
                       
                       if (historyIndex > 0 && lineToUse[historyIndex - 1]) {
                         const lastM = lineToUse[historyIndex - 1];
@@ -1831,7 +1838,7 @@
                   <div className="w-full max-w-[420px] max-h-full aspect-square relative">
                     
                     {/* BARRE D'ÉVALUATION (A gauche du plateau) */}
-                    {puzzleState !== 'playing' && isAnalysisActive && (
+                    {isAnalysisActive && (
                       <div className={`absolute -left-3 sm:-left-4 top-0 w-2 sm:w-2.5 h-full rounded-sm overflow-hidden flex flex-col justify-end shadow-md z-10 ${evalBarBg}`}>
                         <div className={`w-full transition-all duration-500 ease-out ${evalBarFill}`} style={{ height: `${barHeight}%` }}></div>
                       </div>
@@ -1857,12 +1864,15 @@
                   </div>
                 </div>
 
-                {/* ================= BARRE STOCKFISH (LIGNE PGN ANGLAISE CLASSIQUE) ================= */}
-                {puzzleState !== 'playing' && (
+                {/* ================= BARRE STOCKFISH (LIGNE PGN CLASSIQUE 1.e4) ================= */}
+                {(puzzleState !== 'playing' || isPracticeMode) && (
                   <div className="w-full shrink-0 flex justify-center mt-2 h-7 sm:h-9">
                       <div className="w-full max-w-[420px] bg-slate-800 rounded-lg border border-slate-700 flex items-center px-3 justify-between shadow-inner">
                           {!isAnalysisActive ? (
-                              <button onClick={() => setIsAnalysisActive(true)} className="text-[12px] sm:text-[13px] font-bold text-indigo-400 hover:text-indigo-300 w-full h-full text-center flex items-center justify-center gap-2 transition">
+                              <button onClick={() => {
+                                  setIsAnalysisActive(true);
+                                  setFlipped(false); // Retournement automatique de la carte à l'endroit
+                              }} className="text-[12px] sm:text-[13px] font-bold text-indigo-400 hover:text-indigo-300 w-full h-full text-center flex items-center justify-center gap-2 transition">
                                   <IconSearch size={14} /> Analyser la position avec Stockfish
                               </button>
                           ) : (
@@ -1879,20 +1889,24 @@
                                       setIsAnalysisActive(false); 
                                       if (engineWorker) engineWorker.postMessage('stop'); 
                                       
-                                      // Restauration de la ligne officielle à la fermeture de l'analyse
-                                      const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
-                                      setCurrentLine(currentPuzzle.moves);
-                                      const targetLength = currentPuzzle.moves.length;
-                                      setHistoryIndex(targetLength);
-                                      setMaxHistoryIndex(targetLength);
-                                      
-                                      const newGame = new window.Chess(currentPuzzle.fen);
-                                      for (let i = 0; i < targetLength; i++) {
-                                          const uci = currentPuzzle.moves[i];
-                                          newGame.move({ from: uci.substring(0, 2), to: uci.substring(2, 4), promotion: uci.length === 5 ? uci[4] : 'q' });
+                                      // Restauration ou réinitialisation à la fermeture de l'analyse
+                                      if (puzzleState === 'playing') {
+                                          initPuzzle(currentPuzzleIdx);
+                                      } else {
+                                          const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+                                          setCurrentLine(currentPuzzle.moves);
+                                          const targetLength = currentPuzzle.moves.length;
+                                          setHistoryIndex(targetLength);
+                                          setMaxHistoryIndex(targetLength);
+                                          
+                                          const newGame = new window.Chess(currentPuzzle.fen);
+                                          for (let i = 0; i < targetLength; i++) {
+                                              const uci = currentPuzzle.moves[i];
+                                              newGame.move({ from: uci.substring(0, 2), to: uci.substring(2, 4), promotion: uci.length === 5 ? uci[4] : 'q' });
+                                          }
+                                          setGame(newGame);
+                                          setCurrentFen(newGame.fen());
                                       }
-                                      setGame(newGame);
-                                      setCurrentFen(newGame.fen());
                                   }} className="text-slate-500 hover:text-slate-300 ml-2 p-1 shrink-0">
                                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                   </button>
@@ -1910,10 +1924,10 @@
                       </button>
                       <div className="w-1/3 flex flex-col items-center justify-center text-center">
                           <span className="font-mono text-sm font-bold text-slate-300">
-                              {puzzleState === 'playing' ? (historyIndex === maxHistoryIndex ? 'Actuel' : `-${maxHistoryIndex - historyIndex}`) : `${historyIndex}/${currentLine.length}`}
+                              {puzzleState === 'playing' && !isAnalysisActive ? (historyIndex === maxHistoryIndex ? 'Actuel' : `-${maxHistoryIndex - historyIndex}`) : `${historyIndex}/${currentLine.length}`}
                           </span>
                       </div>
-                      <button onClick={() => navigateHistory(1)} disabled={isAnimating || (puzzleState === 'playing' ? historyIndex === maxHistoryIndex : historyIndex === currentLine.length)} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
+                      <button onClick={() => navigateHistory(1)} disabled={isAnimating || (puzzleState === 'playing' && !isAnalysisActive ? historyIndex === maxHistoryIndex : historyIndex === currentLine.length)} className="w-1/3 h-full bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-slate-600 transition flex items-center justify-center text-slate-200">
                           <IconArrowRight size={24} />
                       </button>
                   </div>
