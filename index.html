@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     
-    <!-- Paramètres pour l'installation sur téléphone -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,31 +12,21 @@
     
     <title>Tac-Tic Chess</title>
 
-    <!-- Icône pour le navigateur Web (Ordinateur) -->
     <link rel="icon" type="image/png" href="./icon.png">
     
-    <!-- Icône pour l'écran d'accueil du téléphone -->
     <link rel="apple-touch-icon" href="./icon.png">
     
-    <!-- Fichier Manifest pour Android -->
     <link rel="manifest" href="./manifest.json">
 
-    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
-    <!-- ========================================== -->
-    <!-- CHARGEMENT DES MODULES FIREBASE            -->
-    <!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -72,9 +61,6 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
-        // ============================================================================
-        // 1. CONFIGURATION FIREBASE (FIXÉE EN DUR)
-        // ============================================================================
         const monFirebaseConfig = {
             apiKey: "AIzaSyDoUW0pmncV9XcqQfqsOx5BivS0YZs-TMA",
             authDomain: "tac-tic-chess.firebaseapp.com",
@@ -85,9 +71,6 @@
             measurementId: "G-9GPB9PYPVM"
         };
 
-        // ============================================================================
-        // 2. CONFIGURATION DES BASES DE DONNÉES PAR ELO
-        // ============================================================================
         const ELO_CATEGORIES = [400, 900, 1400, 1900, 2400];
         const ELO_URLS = {
             400: "./400-900-5000_problemes_aleatoires.csv",
@@ -105,9 +88,6 @@
           { id: "W3", color: "w", elo: 2861, fen: "r4r2/1p3pkp/p5p1/3R1N1Q/3P4/8/P1q2P2/3R2K1 b - - 3 25", moves: ["g6f5", "d5c5", "c2e4", "h5g5", "g7h8", "g5f6"], explanation: "Secours: Séquence magistrale." }
         ];
 
-        // ============================================================================
-        // 3. CONFIGURATION DES THÈMES (COULEURS ET PIÈCES)
-        // ============================================================================
         const BOARD_THEMES = {
             vert: { name: "Vert Classique", light: 'bg-[#eeeed2]', dark: 'bg-[#769656]', selected: 'bg-[#baca44]', lastLight: 'bg-[#f6f669]', lastDark: 'bg-[#baba32]', textL: 'text-[#769656]', textD: 'text-[#eeeed2]' },
             bleu: { name: "Bleu Lichess", light: 'bg-[#dee3e6]', dark: 'bg-[#8ca2ad]', selected: 'bg-[#73b5c6]', lastLight: 'bg-[#a3d1df]', lastDark: 'bg-[#679eb0]', textL: 'text-[#8ca2ad]', textD: 'text-[#dee3e6]' },
@@ -133,7 +113,6 @@
             const isWhite = pieceChar === pieceChar.toUpperCase();
             const color = isWhite ? 'w' : 'b';
             const type = pieceChar.toUpperCase();
-            
             if (theme === 'wikipedia') {
                 const wikiUrls = {
                     'P': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg', 'N': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
@@ -149,10 +128,6 @@
             }
         };
 
-        // ============================================================================
-        // FONCTIONS DE FORMATAGE ET PGN
-        // ============================================================================
-        
         const isFailedScore = (t) => typeof t === 'string' && t.startsWith('NA') && t !== 'NA_solved';
 
         const formatTime = (secs) => {
@@ -182,19 +157,21 @@
             return { solvedCount, totalTime };
         };
 
-        // Formatage PGN robuste et officiel (1.e4 e5 2.Cf3...)
-        const formatPV = (fen, uciLine) => {
-            const rawMoves = uciLine.trim().split(' ').slice(0, 5); 
-            if (!window.Chess || !fen) return rawMoves.join(' ');
+        // NOUVELLE METHODE ROBUSTE : On traduit le PV uniquement à l'affichage pour éviter de crasher le Worker
+        const formatSanPV = (fen, rawPv) => {
+            if (!rawPv || !fen || !window.Chess) return "recherche...";
             
+            const moves = rawPv.split(' ').slice(0, 5); 
             try {
                 const tempGame = new window.Chess(fen);
-                let sanMoves = [];
-                for (let uci of rawMoves) {
+                let sanLine = [];
+                
+                for (let i = 0; i < moves.length; i++) {
+                    const uci = moves[i];
                     if (uci.length < 4 || uci.length > 5) break; 
                     
-                    const turn = tempGame.turn();
                     const moveNum = tempGame.moveNumber();
+                    const isWhite = tempGame.turn() === 'w';
                     
                     const move = tempGame.move({ 
                         from: uci.substring(0, 2), 
@@ -203,32 +180,23 @@
                     });
                     
                     if (!move) {
-                        sanMoves.push(uci);
+                        sanLine.push(uci); // Secours si coup illégal
                         break;
                     }
                     
-                    // Notation de type "1.e4" ou "1...e5"
-                    let moveStr = "";
-                    if (turn === 'w') {
-                        moveStr = `${moveNum}.${move.san}`;
+                    if (isWhite) {
+                        sanLine.push(`${moveNum}.${move.san}`);
                     } else {
-                        if (sanMoves.length === 0) {
-                            moveStr = `${moveNum}...${move.san}`;
-                        } else {
-                            moveStr = move.san;
-                        }
+                        if (i === 0) sanLine.push(`${moveNum}...${move.san}`);
+                        else sanLine.push(move.san);
                     }
-                    sanMoves.push(moveStr);
                 }
-                return sanMoves.length > 0 ? sanMoves.join(' ') : rawMoves.join(' ');
+                return sanLine.length > 0 ? sanLine.join(' ') : moves.join(' ');
             } catch(e) {
-                return rawMoves.join(' ');
+                return moves.join(' '); // Fallback Ultime
             }
         };
 
-        // ============================================================================
-        // TIREUR ALÉATOIRE SÉCURISÉ
-        // ============================================================================
         const getSeededRandom = (seedStr) => {
             let h = 0xdeadbeef;
             for(let i = 0; i < seedStr.length; i++)
@@ -250,9 +218,6 @@
             return shuffled;
         };
 
-        // ============================================================================
-        // FONCTION DE GESTION DES SONS
-        // ============================================================================
         const playSound = (type) => {
             const urls = {
                 move: 'https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/sound/standard/Move.ogg',
@@ -277,14 +242,13 @@
           return `${year}-${month}-${day}`;
         };
 
-        // Icônes SVG
         const IconArrowLeft = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m15 18-6-6 6-6"/></svg>;
         const IconArrowRight = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m9 18 6-6-6-6"/></svg>;
         const IconPlay = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
         const IconTrophy = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
         const IconUser = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
         const IconFlame = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-2.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
-        const IconSettings = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
+        const IconSettings = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
         const IconSearch = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>;
 
         const parseCSV = (textData) => {
@@ -365,9 +329,9 @@
           const [flipped, setFlipped] = useState(false);
           const initialMoveTimeout = useRef(null);
 
-          // ETATS POUR STOCKFISH ET VARIANTES LIBRES
+          // ETATS POUR STOCKFISH
           const [engineWorker, setEngineWorker] = useState(null);
-          const [analysis, setAnalysis] = useState({ eval: '', pv: '' });
+          const [analysis, setAnalysis] = useState({ eval: '', rawPv: '' });
           const [isAnalysisActive, setIsAnalysisActive] = useState(false);
           const [currentLine, setCurrentLine] = useState([]); 
           const currentFenRef = useRef('');
@@ -378,7 +342,6 @@
 
           const getHistoryKey = (date, elo) => `${date}_${elo}`;
 
-          // INITIALISATION DE FIREBASE ET STOCKFISH
           useEffect(() => {
             const initApp = async () => {
                 if (!window.Chess) {
@@ -410,32 +373,47 @@
                 try {
                     const blob = new Blob(["importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');"], {type: 'application/javascript'});
                     const worker = new Worker(URL.createObjectURL(blob));
+                    
+                    let lastDepth = 0;
+                    let lastUpdate = 0;
+
                     worker.onmessage = (e) => {
                         const line = e.data;
-                        if (typeof line === 'string' && line.startsWith('info depth') && line.includes('score') && line.includes(' pv ')) {
+                        if (typeof line !== 'string') return;
+                        
+                        if (line.startsWith('info depth') && line.includes('score') && line.includes(' pv ')) {
                             const depthMatch = line.match(/depth (\d+)/);
-                            if (depthMatch && parseInt(depthMatch[1], 10) > 5) {
-                                const isWhiteToMove = currentFenRef.current.includes(' w ');
-                                let scoreStr = '';
-                                const cpMatch = line.match(/score cp (-?\d+)/);
-                                const mateMatch = line.match(/score mate (-?\d+)/);
-                                
-                                if (cpMatch) {
-                                    let cp = parseInt(cpMatch[1], 10);
-                                    if (!isWhiteToMove) cp = -cp;
-                                    scoreStr = (cp > 0 ? '+' : '') + (cp / 100).toFixed(2);
-                                } else if (mateMatch) {
-                                    let mate = parseInt(mateMatch[1], 10);
-                                    if (!isWhiteToMove) mate = -mate;
-                                    scoreStr = mate > 0 ? '+M' + mate : '-M' + Math.abs(mate);
-                                }
+                            if (!depthMatch) return;
+                            
+                            const depth = parseInt(depthMatch[1], 10);
+                            if (depth < 6) return; 
+                            
+                            // Limitation des calculs pour ne pas bloquer l'application
+                            const now = Date.now();
+                            if (depth === lastDepth && now - lastUpdate < 300) return;
+                            lastDepth = depth;
+                            lastUpdate = now;
 
-                                const pvMatch = line.match(/ pv (.*)/);
-                                let pvStr = '';
-                                if (pvMatch) {
-                                    pvStr = formatPV(currentFenRef.current, pvMatch[1]);
-                                }
-                                setAnalysis({ eval: scoreStr, pv: pvStr });
+                            const isWhiteToMove = currentFenRef.current.includes(' w ');
+                            let scoreStr = '';
+                            
+                            const cpMatch = line.match(/score cp (-?\d+)/);
+                            const mateMatch = line.match(/score mate (-?\d+)/);
+                            
+                            if (cpMatch) {
+                                let cp = parseInt(cpMatch[1], 10);
+                                if (!isWhiteToMove) cp = -cp;
+                                scoreStr = (cp > 0 ? '+' : '') + (cp / 100).toFixed(2);
+                            } else if (mateMatch) {
+                                let mate = parseInt(mateMatch[1], 10);
+                                if (!isWhiteToMove) mate = -mate;
+                                scoreStr = mate > 0 ? '+M' + mate : '-M' + Math.abs(mate);
+                            }
+
+                            const pvIndex = line.indexOf(' pv ');
+                            if (pvIndex !== -1) {
+                                const pvRaw = line.substring(pvIndex + 4).trim();
+                                setAnalysis({ eval: scoreStr, rawPv: pvRaw });
                             }
                         }
                     };
@@ -462,7 +440,7 @@
               currentFenRef.current = currentFen;
               
               if (isAnalysisActive && engineWorker && currentFen) {
-                  setAnalysis({ eval: '...', pv: 'calcul...' });
+                  setAnalysis({ eval: '...', rawPv: '' });
                   engineWorker.postMessage('stop');
                   engineWorker.postMessage(`position fen ${currentFen}`);
                   engineWorker.postMessage('go depth 18');
@@ -474,8 +452,8 @@
                   if (databases[selectedElo].length > 0) return; 
                   setIsLoadingDB(true);
                   try {
-                      // Utilisation stricte du format d'origine qui contourne le cache sans casser les URLs locales
-                      const response = await fetch(ELO_URLS[selectedElo], { cache: "no-cache" });
+                      // FICHIER CONNECTÉ STRICTEMENT COMME L'ORIGINAL
+                      const response = await fetch(ELO_URLS[selectedElo]);
                       if (!response.ok) throw new Error("Fichier introuvable");
                       const textData = await response.text();
                       const parsedData = parseCSV(textData);
@@ -497,7 +475,8 @@
                   setIsLoadingDB(true);
                   await Promise.all(missingElos.map(async (elo) => {
                       try {
-                          const res = await fetch(ELO_URLS[elo], { cache: "no-cache" });
+                          const res = await fetch(ELO_URLS[elo]);
+                          if (!res.ok) throw new Error("Erreur réseau");
                           const text = await res.text();
                           const parsed = parseCSV(text);
                           currentDbs[elo] = parsed;
@@ -938,8 +917,10 @@
             
             if (puzzleState === 'playing' && isPaused && !isAnalysisActive) return; 
 
+            // Si l'analyse n'est pas active et que le problème est fini, on ne bouge rien
             if (puzzleState !== 'playing' && !isAnalysisActive) return;
 
+            // Pendant le jeu, force à être au bout de la ligne
             if (puzzleState === 'playing' && historyIndex !== maxHistoryIndex && !isAnalysisActive) { 
                 navigateHistory(maxHistoryIndex - historyIndex); 
                 return; 
@@ -949,6 +930,7 @@
             const piece = game.get(alg);
             const currentPuzzleColor = dailyPuzzles[currentPuzzleIdx].color;
             
+            // Le joueur peut bouger toutes les pièces pendant l'analyse libre
             const isPlayerPiece = isAnalysisActive 
                 ? (piece && piece.color === game.turn()) 
                 : (puzzleState === 'playing' 
@@ -1173,7 +1155,10 @@
             
             for (let i = 0; i < newIndex; i++) {
               const m = lineToUse[i];
-              lastMove = newGame.move({ from: m.substring(0, 2), to: m.substring(2, 4), promotion: m.length === 5 ? m[4] : 'q' });
+              // Fallback si la variante a été corrompue
+              if (m) {
+                lastMove = newGame.move({ from: m.substring(0, 2), to: m.substring(2, 4), promotion: m.length === 5 ? m[4] : 'q' });
+              }
             }
             
             if (lastMove) {
@@ -1903,7 +1888,7 @@
                   </div>
                 </div>
 
-                {/* ================= BARRE STOCKFISH (LIGNE PGN CLASSIQUE 1.e4) ================= */}
+                {/* ================= BARRE STOCKFISH (LIGNE PGN OFFICIELLE) ================= */}
                 {(puzzleState !== 'playing' || isPracticeMode) && (
                   <div className="w-full shrink-0 flex justify-center mt-2 h-7 sm:h-9">
                       <div className="w-full max-w-[420px] bg-slate-800 rounded-lg border border-slate-700 flex items-center px-3 justify-between shadow-inner">
@@ -1921,7 +1906,7 @@
                                           {analysis.eval || '...'}
                                       </span>
                                       <span className="font-mono text-[11px] sm:text-xs text-slate-300 truncate">
-                                          {analysis.pv || 'recherche...'}
+                                          {isAnalysisActive ? formatSanPV(currentFen, analysis.rawPv) : ''}
                                       </span>
                                   </div>
                                   <button onClick={() => { 
@@ -1935,10 +1920,11 @@
                                           const newGame = new window.Chess(currentPuzzle.fen);
                                           for (let i = 0; i < historyIndex; i++) {
                                               const uci = currentPuzzle.moves[i];
-                                              newGame.move({ from: uci.substring(0, 2), to: uci.substring(2, 4), promotion: uci.length === 5 ? uci[4] : 'q' });
+                                              if (uci) newGame.move({ from: uci.substring(0, 2), to: uci.substring(2, 4), promotion: uci.length === 5 ? uci[4] : 'q' });
                                           }
                                           setGame(newGame);
                                           setCurrentFen(newGame.fen());
+                                          setMaxHistoryIndex(historyIndex);
                                       } else {
                                           const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
                                           setCurrentLine(currentPuzzle.moves);
