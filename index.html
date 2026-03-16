@@ -1931,7 +1931,7 @@
                                           {analysis.eval || '...'}
                                       </span>
                                       <span className="font-mono text-[11px] sm:text-xs text-slate-300 truncate">
-                                          {isAnalysisActive ? formatSanPV(currentFen, analysis.rawPv) : ''}
+                                          {isAnalysisActive ? analysis.pv : ''}
                                       </span>
                                   </div>
                                   <button onClick={() => { 
