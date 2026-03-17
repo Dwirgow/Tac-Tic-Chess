@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     
-    <!-- Paramètres pour l'installation sur téléphone -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,31 +12,21 @@
     
     <title>Tac-Tic Chess</title>
 
-    <!-- Icône pour le navigateur Web (Ordinateur) -->
     <link rel="icon" type="image/png" href="./icon.png">
     
-    <!-- Icône pour l'écran d'accueil du téléphone -->
     <link rel="apple-touch-icon" href="./icon.png">
     
-    <!-- Fichier Manifest pour Android -->
     <link rel="manifest" href="./manifest.json">
 
-    <!-- Tailwind CSS pour le style -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel pour compiler le JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Moteur d'échecs Lichess -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
-    <!-- ========================================== -->
-    <!-- CHARGEMENT DES MODULES FIREBASE            -->
-    <!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -153,14 +142,25 @@
         // FONCTIONS DE FORMATAGE ET PGN
         // ============================================================================
         
-        const isFailedScore = (t) => typeof t === 'string' && t.startsWith('NA') && t !== 'NA_solved';
+        // Un score échoué (NA original non corrigé)
+        const isFailedScore = (t) => typeof t === 'string' && t.startsWith('NA_') && t !== 'NA_solved';
+        // Un score réussi après correction (ou un vieux NA_solved hérité)
+        const isCorrectedScore = (t) => typeof t === 'string' && (t.startsWith('CORRECTED_') || t === 'NA_solved');
 
         const formatTime = (secs) => {
-            if (secs === 'NA_solved' || (typeof secs === 'string' && secs.includes('_NA'))) return 'NA';
-            if (isFailedScore(secs)) return 'NA';
-            if (secs == null) return '--:--';
-            const m = Math.floor(secs / 60).toString();
-            const s = (secs % 60).toString().padStart(2, '0');
+            if (secs === null) return '--:--';
+            let val = secs;
+            if (typeof secs === 'string') {
+                if (secs === 'NA_solved') return '--:--'; // Legacy
+                if (secs.startsWith('NA_') || secs.startsWith('CORRECTED_')) {
+                    val = parseInt(secs.split('_')[1], 10);
+                } else {
+                    return '--:--';
+                }
+            }
+            if (isNaN(val)) return '--:--';
+            const m = Math.floor(val / 60).toString();
+            const s = (val % 60).toString().padStart(2, '0');
             return `${m}:${s}`;
         };
 
@@ -171,12 +171,18 @@
                 if (typeof t === 'number') {
                     solvedCount++;
                     totalTime += t;
-                } else if (isFailedScore(t)) {
-                    // Extraction du temps caché dans NA_xx
-                    const parts = t.split('_');
-                    if (parts.length > 1) {
-                        const timeVal = parseInt(parts[1], 10);
-                        if (!isNaN(timeVal)) totalTime += timeVal;
+                } else if (typeof t === 'string') {
+                    if (t === 'NA_solved') {
+                        solvedCount++;
+                    } else if (t.startsWith('NA_') || t.startsWith('CORRECTED_')) {
+                        const parts = t.split('_');
+                        if (parts.length > 1) {
+                            const timeVal = parseInt(parts[1], 10);
+                            if (!isNaN(timeVal)) totalTime += timeVal;
+                        }
+                        if (t.startsWith('CORRECTED_')) {
+                            solvedCount++;
+                        }
                     }
                 }
             });
@@ -631,22 +637,36 @@
           };
 
           const handleTimeOut = () => {
+            if (initialMoveTimeout.current) clearTimeout(initialMoveTimeout.current);
             setIsPaused(true);
             setPuzzleState('failed');
+            
             if (gameMode === 'daily') {
-                setPuzzleTimes(prev => {
-                  const newTimes = [...prev];
-                  if (!isPracticeMode) {
-                      for (let i = currentPuzzleIdx; i < 5; i++) {
-                          if (newTimes[i] === null) {
-                              newTimes[i] = (i === currentPuzzleIdx) ? `NA_${currentPuzzleTime}` : 'NA_0';
-                          }
-                      }
-                      saveDailyProgress(newTimes, 0);
-                  }
-                  return newTimes;
-                });
-                setTimeout(() => finishDaily(), 2000);
+                const newTimes = [...puzzleTimes];
+                if (!isPracticeMode) {
+                    for (let i = currentPuzzleIdx; i < 5; i++) {
+                        if (newTimes[i] === null) {
+                            newTimes[i] = (i === currentPuzzleIdx) ? `NA_${currentPuzzleTime}` : 'NA_0';
+                        }
+                    }
+                    saveDailyProgress(newTimes, 0);
+                } else {
+                    const hKey = getHistoryKey(selectedDate, selectedElo);
+                    setHistory(prevHist => {
+                        const oldDay = prevHist[hKey];
+                        const officialTimes = oldDay ? (oldDay.officialTimes || oldDay.times) : newTimes;
+                        const newHistory = { ...prevHist, [hKey]: { times: newTimes, officialTimes: officialTimes, remainingTime: 0, timestamp: Date.now() } };
+                        localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
+                        return newHistory;
+                    });
+                }
+                setPuzzleTimes(newTimes);
+
+                setTimeout(() => {
+                    setIsAnalysisActive(false);
+                    if (engineWorker) engineWorker.postMessage('stop');
+                    setView('summary');
+                }, 2000);
             }
           };
 
@@ -806,14 +826,12 @@
             setPuzzleState('failed');
             
             if (gameMode === 'daily') {
-                setPuzzleTimes(prev => { 
-                    const newTimes = [...prev]; 
-                    if (!isPracticeMode) {
-                        newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`; 
-                        saveDailyProgress(newTimes); 
-                    }
-                    return newTimes; 
-                });
+                const newTimes = [...puzzleTimes]; 
+                if (!isPracticeMode) {
+                    newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`; 
+                    saveDailyProgress(newTimes); 
+                }
+                setPuzzleTimes(newTimes);
             }
 
             const startAnimation = () => {
@@ -1033,32 +1051,33 @@
                 return;
             }
             
-            setPuzzleTimes(prev => {
-              const newTimes = [...prev];
-              const oldVal = newTimes[currentPuzzleIdx];
+            const newTimes = [...puzzleTimes];
+            const oldVal = newTimes[currentPuzzleIdx];
 
-              if (status === 'solved') {
-                  if (isPracticeMode) {
-                      if (oldVal === 'NA_solved' || (typeof oldVal === 'string' && oldVal.includes('_NA'))) {
-                          newTimes[currentPuzzleIdx] = 'NA_solved';
-                      } else if (typeof oldVal === 'number') {
-                          newTimes[currentPuzzleIdx] = Math.min(currentPuzzleTime, oldVal);
-                      } else {
-                          newTimes[currentPuzzleIdx] = currentPuzzleTime;
-                      }
-                  } else {
-                      newTimes[currentPuzzleIdx] = currentPuzzleTime;
-                  }
-              } else {
-                  if (!isPracticeMode) newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`;
-              }
-              
-              if (!isPracticeMode) {
-                  saveDailyProgress(newTimes); 
-              }
+            if (status === 'solved') {
+                if (isPracticeMode) {
+                    if (typeof oldVal === 'string' && oldVal.startsWith('NA_')) {
+                        const timePart = oldVal.split('_')[1] || '0';
+                        newTimes[currentPuzzleIdx] = `CORRECTED_${timePart}`;
+                    } else if (isCorrectedScore(oldVal)) {
+                        newTimes[currentPuzzleIdx] = oldVal;
+                    } else if (typeof oldVal === 'number') {
+                        newTimes[currentPuzzleIdx] = Math.min(currentPuzzleTime, oldVal);
+                    } else {
+                        newTimes[currentPuzzleIdx] = currentPuzzleTime;
+                    }
+                } else {
+                    newTimes[currentPuzzleIdx] = currentPuzzleTime;
+                }
+            } else {
+                if (!isPracticeMode) newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`;
+            }
+            
+            setPuzzleTimes(newTimes);
 
-              return newTimes;
-            });
+            if (!isPracticeMode) {
+                saveDailyProgress(newTimes); 
+            }
 
             if (status === 'solved') {
               setIsAnimating(true);
@@ -1142,6 +1161,7 @@
           };
 
           const finishDaily = async (goToHome = false) => {
+            if (initialMoveTimeout.current) clearTimeout(initialMoveTimeout.current);
             setIsAnalysisActive(false);
             if (engineWorker) engineWorker.postMessage('stop');
 
@@ -1344,7 +1364,7 @@
             const isCompleted = isStarted && offTimes.every(t => t !== null);
             
             const currentTimes = historyDay ? historyDay.times : [];
-            const isPerfect = isCompleted && currentTimes.every(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA')));
+            const isPerfect = isCompleted && currentTimes.every(t => typeof t === 'number' || isCorrectedScore(t));
 
             const allKeysThisElo = Object.keys(history).filter(k => k.endsWith(`_${selectedElo}`));
             const totalAttempted = allKeysThisElo.reduce((acc, k) => {
@@ -1352,8 +1372,8 @@
                 return acc + off.filter(t => t !== null).length;
             }, 0);
             const totalSolved = allKeysThisElo.reduce((acc, k) => {
-                const off = history[k].officialTimes || history[k].times;
-                return acc + off.filter(t => typeof t === 'number').length;
+                const times = history[k].times;
+                return acc + times.filter(t => typeof t === 'number' || isCorrectedScore(t)).length;
             }, 0);
 
             const today = new Date();
@@ -1443,7 +1463,7 @@
                        const loopDayIsCompleted = loopDayIsStarted && loopOffTimes.every(t => t !== null);
                        
                        const loopCurrentTimes = loopHistDay ? loopHistDay.times : [];
-                       const loopDayIsPerfect = loopDayIsCompleted && loopCurrentTimes.every(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA')));
+                       const loopDayIsPerfect = loopDayIsCompleted && loopCurrentTimes.every(t => typeof t === 'number' || isCorrectedScore(t));
                        
                        const isSelected = selectedDate === day.dateStr;
                        
@@ -1482,16 +1502,17 @@
                       </h2>
                       <div className="flex justify-between sm:justify-center sm:space-x-4 mb-6">
                         {currentTimes.map((t, i) => {
-                          const isPracticeSuccess = t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'));
+                          const isPracticeSuccess = isCorrectedScore(t);
                           let colorClass = 'text-emerald-400';
                           if (isFailedScore(t)) colorClass = 'text-red-400';
+                          else if (isPracticeSuccess) colorClass = 'text-emerald-400';
                           else if (t === null) colorClass = 'text-slate-600';
 
                           return (
                             <div key={i} className="flex flex-col items-center">
                               <span className="text-xs text-slate-400">P{i+1}</span>
                               <span className={`text-sm sm:text-lg font-mono font-bold ${colorClass}`}>
-                                {t === null ? '--' : formatTime(t)}
+                                {t === null ? '--:--' : formatTime(t)}
                               </span>
                             </div>
                           );
@@ -1528,7 +1549,7 @@
                      </div>
                      <div>
                         <div className="text-2xl font-bold text-emerald-400">{totalSolved} <span className="text-lg text-slate-500">/ {totalAttempted}</span></div>
-                        <div className="text-xs text-slate-500">Problèmes réussis (du 1er coup)</div>
+                        <div className="text-xs text-slate-500">Problèmes résolus (total)</div>
                      </div>
                   </div>
                 </div>
@@ -1594,7 +1615,7 @@
                                             {score.times.map((t, i) => (
                                                 <React.Fragment key={i}>
                                                     <span className={isFailedScore(t) ? 'text-red-400' : (typeof t === 'number' ? 'text-emerald-400' : 'text-slate-500')}>
-                                                        {isFailedScore(t) ? 'NA' : (t === null ? '--:--' : formatTime(t))}
+                                                        {t === null ? '--:--' : formatTime(t)}
                                                     </span>
                                                     {i < 4 && <span className="text-slate-600">|</span>}
                                                 </React.Fragment>
@@ -1648,7 +1669,7 @@
             }
 
             const displayTimes = puzzleTimes;
-            const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'))).length;
+            const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || isCorrectedScore(t)).length;
             const isLocalPerfect = localSolvedCount === 5;
             const stats = getScoreStats(displayTimes);
 
@@ -1680,7 +1701,7 @@
                 <div className="w-full space-y-3">
                   {displayTimes.map((t, i) => {
                     const eloText = dailyPuzzles[i] ? dailyPuzzles[i].explanation.split('\n')[0].split('|')[1]?.trim() : '';
-                    const isPracticeSuccess = t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'));
+                    const isPracticeSuccess = isCorrectedScore(t);
                     let colorClass = 'text-emerald-400';
                     if (isFailedScore(t)) colorClass = 'text-red-400';
                     else if (isPracticeSuccess) colorClass = 'text-emerald-400';
@@ -1847,7 +1868,7 @@
                     <div className="w-full flex justify-center space-x-3 mb-3 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
                         {[0, 1, 2, 3, 4].map(i => {
                           let dotClass = '';
-                          const isPracticeSuccess = puzzleTimes[i] === 'NA_solved' || (typeof puzzleTimes[i] === 'string' && puzzleTimes[i].includes('_NA'));
+                          const isPracticeSuccess = isCorrectedScore(puzzleTimes[i]);
                           
                           if (i === currentPuzzleIdx) {
                               if (puzzleState === 'solved') {
