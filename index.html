@@ -142,25 +142,14 @@
         // FONCTIONS DE FORMATAGE ET PGN
         // ============================================================================
         
-        // Un score échoué (NA original non corrigé)
-        const isFailedScore = (t) => typeof t === 'string' && t.startsWith('NA_') && t !== 'NA_solved';
-        // Un score réussi après correction (ou un vieux NA_solved hérité)
-        const isCorrectedScore = (t) => typeof t === 'string' && (t.startsWith('CORRECTED_') || t === 'NA_solved');
+        const isFailedScore = (t) => typeof t === 'string' && t.startsWith('NA') && t !== 'NA_solved';
 
         const formatTime = (secs) => {
-            if (secs === null) return '--:--';
-            let val = secs;
-            if (typeof secs === 'string') {
-                if (secs === 'NA_solved') return '--:--'; // Legacy
-                if (secs.startsWith('NA_') || secs.startsWith('CORRECTED_')) {
-                    val = parseInt(secs.split('_')[1], 10);
-                } else {
-                    return '--:--';
-                }
-            }
-            if (isNaN(val)) return '--:--';
-            const m = Math.floor(val / 60).toString();
-            const s = (val % 60).toString().padStart(2, '0');
+            if (secs === 'NA_solved' || (typeof secs === 'string' && secs.includes('_NA'))) return 'NA';
+            if (isFailedScore(secs)) return 'NA';
+            if (secs == null) return '--:--';
+            const m = Math.floor(secs / 60).toString();
+            const s = (secs % 60).toString().padStart(2, '0');
             return `${m}:${s}`;
         };
 
@@ -171,27 +160,21 @@
                 if (typeof t === 'number') {
                     solvedCount++;
                     totalTime += t;
-                } else if (typeof t === 'string') {
-                    if (t === 'NA_solved') {
-                        solvedCount++;
-                    } else if (t.startsWith('NA_') || t.startsWith('CORRECTED_')) {
-                        const parts = t.split('_');
-                        if (parts.length > 1) {
-                            const timeVal = parseInt(parts[1], 10);
-                            if (!isNaN(timeVal)) totalTime += timeVal;
-                        }
-                        if (t.startsWith('CORRECTED_')) {
-                            solvedCount++;
-                        }
+                } else if (isFailedScore(t)) {
+                    // Extraction du temps caché dans NA_xx
+                    const parts = t.split('_');
+                    if (parts.length > 1) {
+                        const timeVal = parseInt(parts[1], 10);
+                        if (!isNaN(timeVal)) totalTime += timeVal;
                     }
                 }
             });
             return { solvedCount, totalTime };
         };
 
-        // Formatage PGN robuste : Correction du problème .moveNumber()
+        // Formatage PGN robuste et officiel (1.e4 e5 2.Cf3...)
         const formatPV = (fen, uciLine) => {
-            const rawMoves = uciLine.trim().split(' ').slice(0, 5); // Conserve les 5 meilleurs coups
+            const rawMoves = uciLine.trim().split(' ').slice(0, 5); 
             if (!window.Chess || !fen) return rawMoves.join(' ');
             
             try {
@@ -201,7 +184,6 @@
                     if (uci.length < 4 || uci.length > 5) break; 
                     
                     const turn = tempGame.turn();
-                    // SOLUTION : On récupère le numéro de coup en décortiquant le FEN au lieu de .moveNumber()
                     const currentFen = tempGame.fen();
                     const fenParts = currentFen.split(' ');
                     const moveNum = fenParts[5]; 
@@ -217,7 +199,6 @@
                         break;
                     }
                     
-                    // Notation de type "1.e4" ou "1...e5"
                     let moveStr = "";
                     if (turn === 'w') {
                         moveStr = `${moveNum}.${move.san}`;
@@ -484,8 +465,7 @@
                   if (databases[selectedElo].length > 0) return; 
                   setIsLoadingDB(true);
                   try {
-                      // TELECHARGEMENT EXACT DU FICHIER INDEX1.HTML
-                      const response = await fetch(ELO_URLS[selectedElo]);
+                      const response = await fetch(ELO_URLS[selectedElo], { cache: "no-cache" });
                       if (!response.ok) throw new Error("Fichier introuvable");
                       const textData = await response.text();
                       const parsedData = parseCSV(textData);
@@ -507,7 +487,7 @@
                   setIsLoadingDB(true);
                   await Promise.all(missingElos.map(async (elo) => {
                       try {
-                          const res = await fetch(ELO_URLS[elo]);
+                          const res = await fetch(ELO_URLS[elo], { cache: "no-cache" });
                           if (!res.ok) throw new Error("Erreur réseau");
                           const text = await res.text();
                           const parsed = parseCSV(text);
@@ -637,36 +617,22 @@
           };
 
           const handleTimeOut = () => {
-            if (initialMoveTimeout.current) clearTimeout(initialMoveTimeout.current);
             setIsPaused(true);
             setPuzzleState('failed');
-            
             if (gameMode === 'daily') {
-                const newTimes = [...puzzleTimes];
-                if (!isPracticeMode) {
-                    for (let i = currentPuzzleIdx; i < 5; i++) {
-                        if (newTimes[i] === null) {
-                            newTimes[i] = (i === currentPuzzleIdx) ? `NA_${currentPuzzleTime}` : 'NA_0';
-                        }
-                    }
-                    saveDailyProgress(newTimes, 0);
-                } else {
-                    const hKey = getHistoryKey(selectedDate, selectedElo);
-                    setHistory(prevHist => {
-                        const oldDay = prevHist[hKey];
-                        const officialTimes = oldDay ? (oldDay.officialTimes || oldDay.times) : newTimes;
-                        const newHistory = { ...prevHist, [hKey]: { times: newTimes, officialTimes: officialTimes, remainingTime: 0, timestamp: Date.now() } };
-                        localStorage.setItem('chessDaily_history_elo', JSON.stringify(newHistory));
-                        return newHistory;
-                    });
-                }
-                setPuzzleTimes(newTimes);
-
-                setTimeout(() => {
-                    setIsAnalysisActive(false);
-                    if (engineWorker) engineWorker.postMessage('stop');
-                    setView('summary');
-                }, 2000);
+                setPuzzleTimes(prev => {
+                  const newTimes = [...prev];
+                  if (!isPracticeMode) {
+                      for (let i = currentPuzzleIdx; i < 5; i++) {
+                          if (newTimes[i] === null) {
+                              newTimes[i] = (i === currentPuzzleIdx) ? `NA_${currentPuzzleTime}` : 'NA_0';
+                          }
+                      }
+                      saveDailyProgress(newTimes, 0);
+                  }
+                  return newTimes;
+                });
+                setTimeout(() => finishDaily(), 2000);
             }
           };
 
@@ -826,12 +792,14 @@
             setPuzzleState('failed');
             
             if (gameMode === 'daily') {
-                const newTimes = [...puzzleTimes]; 
-                if (!isPracticeMode) {
-                    newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`; 
-                    saveDailyProgress(newTimes); 
-                }
-                setPuzzleTimes(newTimes);
+                setPuzzleTimes(prev => { 
+                    const newTimes = [...prev]; 
+                    if (!isPracticeMode) {
+                        newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`; 
+                        saveDailyProgress(newTimes); 
+                    }
+                    return newTimes; 
+                });
             }
 
             const startAnimation = () => {
@@ -1051,33 +1019,32 @@
                 return;
             }
             
-            const newTimes = [...puzzleTimes];
-            const oldVal = newTimes[currentPuzzleIdx];
+            setPuzzleTimes(prev => {
+              const newTimes = [...prev];
+              const oldVal = newTimes[currentPuzzleIdx];
 
-            if (status === 'solved') {
-                if (isPracticeMode) {
-                    if (typeof oldVal === 'string' && oldVal.startsWith('NA_')) {
-                        const timePart = oldVal.split('_')[1] || '0';
-                        newTimes[currentPuzzleIdx] = `CORRECTED_${timePart}`;
-                    } else if (isCorrectedScore(oldVal)) {
-                        newTimes[currentPuzzleIdx] = oldVal;
-                    } else if (typeof oldVal === 'number') {
-                        newTimes[currentPuzzleIdx] = Math.min(currentPuzzleTime, oldVal);
-                    } else {
-                        newTimes[currentPuzzleIdx] = currentPuzzleTime;
-                    }
-                } else {
-                    newTimes[currentPuzzleIdx] = currentPuzzleTime;
-                }
-            } else {
-                if (!isPracticeMode) newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`;
-            }
-            
-            setPuzzleTimes(newTimes);
+              if (status === 'solved') {
+                  if (isPracticeMode) {
+                      if (oldVal === 'NA_solved' || (typeof oldVal === 'string' && oldVal.includes('_NA'))) {
+                          newTimes[currentPuzzleIdx] = 'NA_solved';
+                      } else if (typeof oldVal === 'number') {
+                          newTimes[currentPuzzleIdx] = Math.min(currentPuzzleTime, oldVal);
+                      } else {
+                          newTimes[currentPuzzleIdx] = currentPuzzleTime;
+                      }
+                  } else {
+                      newTimes[currentPuzzleIdx] = currentPuzzleTime;
+                  }
+              } else {
+                  if (!isPracticeMode) newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`;
+              }
+              
+              if (!isPracticeMode) {
+                  saveDailyProgress(newTimes); 
+              }
 
-            if (!isPracticeMode) {
-                saveDailyProgress(newTimes); 
-            }
+              return newTimes;
+            });
 
             if (status === 'solved') {
               setIsAnimating(true);
@@ -1161,7 +1128,6 @@
           };
 
           const finishDaily = async (goToHome = false) => {
-            if (initialMoveTimeout.current) clearTimeout(initialMoveTimeout.current);
             setIsAnalysisActive(false);
             if (engineWorker) engineWorker.postMessage('stop');
 
@@ -1364,7 +1330,7 @@
             const isCompleted = isStarted && offTimes.every(t => t !== null);
             
             const currentTimes = historyDay ? historyDay.times : [];
-            const isPerfect = isCompleted && currentTimes.every(t => typeof t === 'number' || isCorrectedScore(t));
+            const isPerfect = isCompleted && currentTimes.every(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA')));
 
             const allKeysThisElo = Object.keys(history).filter(k => k.endsWith(`_${selectedElo}`));
             const totalAttempted = allKeysThisElo.reduce((acc, k) => {
@@ -1372,8 +1338,8 @@
                 return acc + off.filter(t => t !== null).length;
             }, 0);
             const totalSolved = allKeysThisElo.reduce((acc, k) => {
-                const times = history[k].times;
-                return acc + times.filter(t => typeof t === 'number' || isCorrectedScore(t)).length;
+                const off = history[k].officialTimes || history[k].times;
+                return acc + off.filter(t => typeof t === 'number').length;
             }, 0);
 
             const today = new Date();
@@ -1463,7 +1429,7 @@
                        const loopDayIsCompleted = loopDayIsStarted && loopOffTimes.every(t => t !== null);
                        
                        const loopCurrentTimes = loopHistDay ? loopHistDay.times : [];
-                       const loopDayIsPerfect = loopDayIsCompleted && loopCurrentTimes.every(t => typeof t === 'number' || isCorrectedScore(t));
+                       const loopDayIsPerfect = loopDayIsCompleted && loopCurrentTimes.every(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA')));
                        
                        const isSelected = selectedDate === day.dateStr;
                        
@@ -1502,17 +1468,16 @@
                       </h2>
                       <div className="flex justify-between sm:justify-center sm:space-x-4 mb-6">
                         {currentTimes.map((t, i) => {
-                          const isPracticeSuccess = isCorrectedScore(t);
+                          const isPracticeSuccess = t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'));
                           let colorClass = 'text-emerald-400';
                           if (isFailedScore(t)) colorClass = 'text-red-400';
-                          else if (isPracticeSuccess) colorClass = 'text-emerald-400';
                           else if (t === null) colorClass = 'text-slate-600';
 
                           return (
                             <div key={i} className="flex flex-col items-center">
                               <span className="text-xs text-slate-400">P{i+1}</span>
                               <span className={`text-sm sm:text-lg font-mono font-bold ${colorClass}`}>
-                                {t === null ? '--:--' : formatTime(t)}
+                                {t === null ? '--' : formatTime(t)}
                               </span>
                             </div>
                           );
@@ -1549,7 +1514,7 @@
                      </div>
                      <div>
                         <div className="text-2xl font-bold text-emerald-400">{totalSolved} <span className="text-lg text-slate-500">/ {totalAttempted}</span></div>
-                        <div className="text-xs text-slate-500">Problèmes résolus (total)</div>
+                        <div className="text-xs text-slate-500">Problèmes réussis (du 1er coup)</div>
                      </div>
                   </div>
                 </div>
@@ -1558,6 +1523,12 @@
           };
 
           const renderLeaderboard = () => {
+              const hKey = getHistoryKey(selectedDate, selectedElo);
+              const historyDay = history[hKey];
+              const offTimes = historyDay ? (historyDay.officialTimes || historyDay.times) : [];
+              // Vérifie si le joueur actuel a terminé ses 5 problèmes du jour
+              const hasCompletedDaily = offTimes.length === 5 && offTimes.every(t => t !== null);
+
               return (
                 <div className="flex flex-col p-4 sm:p-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 overflow-y-auto">
                     <h1 className="text-3xl font-black text-center mt-2 sm:mt-4 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
@@ -1600,30 +1571,46 @@
                                         </div>
                                     );
                                 }
+                                
                                 const stats = getScoreStats(score.times);
+                                const isCurrentPlayer = score.userId === fbUser?.uid;
+                                // On affiche les détails si le joueur actuel a fini ses 5 problèmes, ou s'il s'agit de son propre score
+                                const showScore = hasCompletedDaily || isCurrentPlayer;
+
                                 return (
-                                    <div key={index} className={`flex flex-col gap-2 p-4 rounded-xl border ${score.userId === fbUser?.uid ? 'bg-indigo-900/40 border-indigo-500/50' : 'bg-slate-800 border-slate-700'} shadow-md`}>
+                                    <div key={index} className={`flex flex-col gap-2 p-4 rounded-xl border ${isCurrentPlayer ? 'bg-indigo-900/40 border-indigo-500/50' : 'bg-slate-800 border-slate-700'} shadow-md`}>
                                         <div className="flex items-center gap-3">
-                                            <div className="font-black text-slate-500 w-6 text-lg">{index + 1}.</div>
-                                            <span className={`font-bold text-lg ${score.userId === fbUser?.uid ? 'text-indigo-300' : 'text-slate-200'}`}>
+                                            <div className="font-black text-slate-500 w-6 text-lg flex justify-center">
+                                                {showScore ? `${index + 1}.` : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>}
+                                            </div>
+                                            <span className={`font-bold text-lg ${isCurrentPlayer ? 'text-indigo-300' : 'text-slate-200'}`}>
                                                 {score.username}
-                                                {score.userId === fbUser?.uid && " (Vous)"}
+                                                {isCurrentPlayer && " (Vous)"}
                                             </span>
                                         </div>
                                         
                                         <div className="pl-9 font-mono text-[11px] sm:text-xs text-slate-400 flex items-center flex-wrap gap-x-1.5">
-                                            {score.times.map((t, i) => (
-                                                <React.Fragment key={i}>
-                                                    <span className={isFailedScore(t) ? 'text-red-400' : (typeof t === 'number' ? 'text-emerald-400' : 'text-slate-500')}>
-                                                        {t === null ? '--:--' : formatTime(t)}
+                                            {showScore ? (
+                                                <React.Fragment>
+                                                    {score.times.map((t, i) => (
+                                                        <React.Fragment key={i}>
+                                                            <span className={isFailedScore(t) ? 'text-red-400' : (typeof t === 'number' ? 'text-emerald-400' : 'text-slate-500')}>
+                                                                {isFailedScore(t) ? 'NA' : (t === null ? '--:--' : formatTime(t))}
+                                                            </span>
+                                                            {i < 4 && <span className="text-slate-600">|</span>}
+                                                        </React.Fragment>
+                                                    ))}
+                                                    <span className="text-slate-600 ml-1">|</span>
+                                                    <span className={`font-bold ml-1 ${stats.solvedCount === 5 ? 'text-emerald-400' : (stats.solvedCount > 0 ? 'text-amber-400' : 'text-red-400')}`}>
+                                                        T={formatTime(stats.totalTime)}
                                                     </span>
-                                                    {i < 4 && <span className="text-slate-600">|</span>}
                                                 </React.Fragment>
-                                            ))}
-                                            <span className="text-slate-600 ml-1">|</span>
-                                            <span className={`font-bold ml-1 ${stats.solvedCount === 5 ? 'text-emerald-400' : (stats.solvedCount > 0 ? 'text-amber-400' : 'text-red-400')}`}>
-                                                T={formatTime(stats.totalTime)}
-                                            </span>
+                                            ) : (
+                                                <span className="text-slate-500 italic flex items-center gap-1.5 mt-1">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                                                    Terminez vos problèmes pour voir le score
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -1669,7 +1656,7 @@
             }
 
             const displayTimes = puzzleTimes;
-            const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || isCorrectedScore(t)).length;
+            const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'))).length;
             const isLocalPerfect = localSolvedCount === 5;
             const stats = getScoreStats(displayTimes);
 
@@ -1701,7 +1688,7 @@
                 <div className="w-full space-y-3">
                   {displayTimes.map((t, i) => {
                     const eloText = dailyPuzzles[i] ? dailyPuzzles[i].explanation.split('\n')[0].split('|')[1]?.trim() : '';
-                    const isPracticeSuccess = isCorrectedScore(t);
+                    const isPracticeSuccess = t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'));
                     let colorClass = 'text-emerald-400';
                     if (isFailedScore(t)) colorClass = 'text-red-400';
                     else if (isPracticeSuccess) colorClass = 'text-emerald-400';
@@ -1742,6 +1729,7 @@
               for (let c = 0; c < 8; c++) {
                 const alg = posToAlgebraic(r, c);
                 const piece = game ? game.get(alg) : null;
+                // on garde charPiece original ('p' pour pion noir, 'P' pour blanc) pour getPieceUrl
                 if (piece) displayBoard[r][c] = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
               }
             }
@@ -1868,7 +1856,7 @@
                     <div className="w-full flex justify-center space-x-3 mb-3 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
                         {[0, 1, 2, 3, 4].map(i => {
                           let dotClass = '';
-                          const isPracticeSuccess = isCorrectedScore(puzzleTimes[i]);
+                          const isPracticeSuccess = puzzleTimes[i] === 'NA_solved' || (typeof puzzleTimes[i] === 'string' && puzzleTimes[i].includes('_NA'));
                           
                           if (i === currentPuzzleIdx) {
                               if (puzzleState === 'solved') {
@@ -1934,7 +1922,7 @@
                   </div>
                 </div>
 
-                {/* ================= BARRE STOCKFISH (LIGNE PGN OFFICIELLE) ================= */}
+                {/* ================= BARRE STOCKFISH (LIGNE PGN) ================= */}
                 {(puzzleState !== 'playing' || isPracticeMode) && (
                   <div className="w-full shrink-0 flex justify-center mt-2 h-7 sm:h-9">
                       <div className="w-full max-w-[420px] bg-slate-800 rounded-lg border border-slate-700 flex items-center px-3 justify-between shadow-inner">
@@ -1952,7 +1940,7 @@
                                           {analysis.eval || '...'}
                                       </span>
                                       <span className="font-mono text-[11px] sm:text-xs text-slate-300 truncate">
-                                          {isAnalysisActive ? analysis.pv : ''}
+                                          {isAnalysisActive ? formatSanPV(currentFen, analysis.rawPv) : ''}
                                       </span>
                                   </div>
                                   <button onClick={() => { 
