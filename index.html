@@ -146,10 +146,16 @@
 
         const formatTime = (secs) => {
             if (secs === 'NA_solved' || (typeof secs === 'string' && secs.includes('_NA'))) return 'NA';
-            if (isFailedScore(secs)) return 'NA';
             if (secs == null) return '--:--';
-            const m = Math.floor(secs / 60).toString();
-            const s = (secs % 60).toString().padStart(2, '0');
+    
+            let timeVal = secs;
+            if (isFailedScore(secs)) {
+                // Extrait le nombre après "NA_"
+                timeVal = parseInt(secs.split('_')[1], 10) || 0; 
+            }
+    
+            const m = Math.floor(timeVal / 60).toString();
+            const s = (timeVal % 60).toString().padStart(2, '0');
             return `${m}:${s}`;
         };
 
@@ -1595,7 +1601,7 @@
                                                     {score.times.map((t, i) => (
                                                         <React.Fragment key={i}>
                                                             <span className={isFailedScore(t) ? 'text-red-400' : (typeof t === 'number' ? 'text-emerald-400' : 'text-slate-500')}>
-                                                                {isFailedScore(t) ? 'NA' : (t === null ? '--:--' : formatTime(t))}
+                                                                {t === null ? '--:--' : formatTime(t)}
                                                             </span>
                                                             {i < 4 && <span className="text-slate-600">|</span>}
                                                         </React.Fragment>
