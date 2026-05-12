@@ -544,7 +544,7 @@
 
           useEffect(() => {
             let interval;
-            if (view === 'playing' && !isPaused && gameMode === 'daily' && globalTime > 0) {
+            if (view === 'playing' && !isPaused && gameMode === 'daily') {
               interval = setInterval(() => {
                 setGlobalTime(prev => {
                   if (prev <= 1) { handleTimeOut(); return 0; }
@@ -554,7 +554,7 @@
               }, 1000);
             }
             return () => clearInterval(interval);
-          }, [view, isPaused, globalTime, gameMode]);
+          }, [view, isPaused, gameMode]);
 
           const saveScoreToFirebase = async (mergedTimes) => {
               if (!fbUser || !fbDb || !window.FirebaseLib) return;
