@@ -286,13 +286,24 @@
 
         const parseCSV = (textData) => {
             try { return JSON.parse(textData); } catch (e) {}
-            const lines = textData.replace(/\r/g, '').trim().split('\n');
+    
+            // 1. On nettoie tout le texte : on supprime les guillemets et les retours chariots \r
+            const cleanText = textData.replace(/"/g, '').replace(/\r/g, '');
+    
+            // 2. On découpe en lignes et on filtre pour ignorer les lignes vides
+            const lines = cleanText.trim().split('\n').filter(line => line.trim() !== '');
+    
+            if (lines.length === 0) return FALLBACK_DB;
+
             const headers = lines[0].split(',');
             const idIdx = headers.indexOf('PuzzleId');
             const fenIdx = headers.indexOf('FEN');
             const movesIdx = headers.indexOf('Moves');
             const ratingIdx = headers.indexOf('Rating');
+    
             const parsedData = [];
+    
+            // Si on a bien trouvé nos colonnes vitales
             if (idIdx > -1 && fenIdx > -1 && movesIdx > -1) {
                 for (let i = 1; i < lines.length; i++) {
                     const cols = lines[i].split(',');
@@ -301,7 +312,7 @@
                         const color = fen.includes(' b ') ? 'w' : 'b';
                         parsedData.push({
                             id: cols[idIdx],
-                            elo: parseInt(cols[ratingIdx]),
+                            elo: parseInt(cols[ratingIdx]) || 1500, // Sécurité si le rating est mal lu
                             fen: fen,
                             moves: cols[movesIdx].split(' '),
                             explanation: `Lichess #${cols[idIdx]} | ~${cols[ratingIdx]} Elo`,
@@ -310,6 +321,7 @@
                     }
                 }
             }
+    
             return parsedData.length > 0 ? parsedData : FALLBACK_DB;
         };
 
