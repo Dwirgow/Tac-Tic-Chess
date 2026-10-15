@@ -544,18 +544,17 @@
 
           useEffect(() => {
             let interval;
-            if (view === 'playing' && !isPaused && gameMode === 'daily') {
-              if (globalTime > 0) {
-                interval = setInterval(() => {
-                  setGlobalTime(prev => prev - 1);
-                  setCurrentPuzzleTime(prev => prev + 1);
-                }, 1000);
-              } else if (globalTime <= 0) {
-                handleTimeOut();
-              }
+            if (view === 'playing' && !isPaused && gameMode === 'daily' && !isPracticeMode && globalTime > 0) {
+              interval = setInterval(() => {
+                setGlobalTime(prev => {
+                  if (prev <= 1) { handleTimeOut(); return 0; }
+                  return prev - 1;
+                });
+                setCurrentPuzzleTime(prev => prev + 1);
+              }, 1000);
             }
             return () => clearInterval(interval);
-          }, [view, isPaused, globalTime, gameMode]);
+          }, [view, isPaused, globalTime, gameMode, isPracticeMode]);
 
           const saveScoreToFirebase = async (mergedTimes) => {
               if (!fbUser || !fbDb || !window.FirebaseLib) return;
@@ -620,6 +619,7 @@
           const handleTimeOut = () => {
             setIsPaused(true);
             setPuzzleState('failed');
+            setGlobalTime(0);
             if (gameMode === 'daily') {
                 setPuzzleTimes(prev => {
                   const newTimes = [...prev];
@@ -633,7 +633,6 @@
                   }
                   return newTimes;
                 });
-                
                 setTimeout(() => {
                     setIsAnalysisActive(false);
                     if (engineWorker) engineWorker.postMessage('stop');
@@ -1844,9 +1843,15 @@
                     </h1>
 
                     {gameMode === 'daily' ? (
-                        <div className={`text-lg sm:text-xl font-mono font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner shrink-0 ${globalTime < 60 ? 'text-red-400 animate-pulse border-red-500/50' : 'text-slate-100'}`}>
-                            {formatTime(globalTime)}
-                        </div>
+                        !isPracticeMode ? (
+                            <div className={`text-lg sm:text-xl font-mono font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner shrink-0 ${globalTime < 60 ? 'text-red-400 animate-pulse border-red-500/50' : 'text-slate-100'}`}>
+                                {formatTime(globalTime)}
+                            </div>
+                        ) : (
+                            <div className="text-sm sm:text-base font-bold px-3 py-1 bg-emerald-900/40 rounded-lg border border-emerald-500/50 text-emerald-400 flex items-center shadow-inner shrink-0 whitespace-nowrap">
+                                Entraînement
+                            </div>
+                        )
                     ) : (
                         <div className="text-sm font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 text-amber-400 flex items-center shadow-inner shrink-0 whitespace-nowrap">
                             <IconFlame size={16} className="mr-1" /> Survie
