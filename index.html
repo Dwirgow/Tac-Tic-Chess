@@ -282,6 +282,7 @@
         const IconFlame = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-2.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>;
         const IconSettings = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
         const IconSearch = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>;
+        const IconBird = ({ size = 24, className = "" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 21a9 9 0 0 0 9-9c0-3.5-1.5-6-3.5-7.5C16.5 3.5 15 3 14 3c-1.5 0-3 1-4.5 2.5C7.5 7.5 6 9 6 12a9 9 0 0 0 6 9z"/><path d="M14 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/><path d="M7 12c-2 0-4 1-5 2.5C3 15 5 16 7 16"/></svg>;
 
         const parseCSV = (textData) => {
             try { return JSON.parse(textData); } catch (e) {}
@@ -352,6 +353,12 @@
           const [isPracticeMode, setIsPracticeMode] = useState(false); 
           const [history, setHistory] = useState({});
           const [survivalHistory, setSurvivalHistory] = useState({});
+		  
+		  const [woodpeckerState, setWoodpeckerState] = useState(() => {
+			const saved = localStorage.getItem('chessWoodpecker_state');
+			return saved ? JSON.parse(saved) : null;
+		  });
+		  const [woodpeckerPuzzles, setWoodpeckerPuzzles] = useState([]);
           
           const [dailyPuzzles, setDailyPuzzles] = useState([]);
           const [survivalPuzzles, setSurvivalPuzzles] = useState([]);
@@ -567,18 +574,19 @@
           }, [selectedDate, selectedElo, history, databases, gameMode]);
 
           useEffect(() => {
-            let interval;
-            if (view === 'playing' && !isPaused && gameMode === 'daily') {
-              interval = setInterval(() => {
-                setGlobalTime(prev => {
-                  if (prev <= 1) { handleTimeOut(); return 0; }
-                  return prev - 1;
-                });
-                setCurrentPuzzleTime(prev => prev + 1);
-              }, 1000);
-            }
-            return () => clearInterval(interval);
-          }, [view, isPaused, gameMode]);
+			let interval;
+			// ✅ On ajoute la condition pour le mode Pic Vert
+			if (view === 'playing' && !isPaused && (gameMode === 'daily' || gameMode === 'woodpecker')) {
+				interval = setInterval(() => {
+					setGlobalTime(prev => {
+						if (prev <= 1) { handleTimeOut(); return 0; }
+						return prev - 1;
+            });
+            setCurrentPuzzleTime(prev => prev + 1);
+        }, 1000);
+    }
+    return () => clearInterval(interval);
+}, [view, isPaused, gameMode]);
 
           const saveScoreToFirebase = async (mergedTimes) => {
               if (!fbUser || !fbDb || !window.FirebaseLib) return;
@@ -657,8 +665,12 @@
                   return newTimes;
                 });
                 setTimeout(() => finishDaily(), 2000);
-            }
-          };
+				} 
+				// ✅ On ajoute l'action à faire si le temps est écoulé en mode Pic Vert
+				else if (gameMode === 'woodpecker') {
+					setTimeout(() => finishWoodpecker(), 2000);
+				}
+			};
 
           useEffect(() => {
               if ((view !== 'leaderboard' && view !== 'home') || !fbDb || !fbUser) return;
@@ -809,7 +821,43 @@
             setView('playing');
             initPuzzle(firstUnsolved);
           };
+const startWoodpeckerCycle = async (count, elo, isNextCycle = false) => {
+    let db = databases[elo];
+    if (!db || db.length === 0) { const allDbs = await loadAllDatabases(); db = allDbs[elo]; }
+    if (!db) return;
+    
+    const puzzles = db.slice(0, count);
+    setWoodpeckerPuzzles(puzzles);
+    setDailyPuzzles(puzzles); // Astuce : on réutilise dailyPuzzles pour l'affichage
+    
+    let maxT = count * 60; // 1 min par problème pour le Cycle 1
+    let cycleNum = 1;
+    if (isNextCycle && woodpeckerState) {
+        maxT = Math.floor(woodpeckerState.maxTime / 2);
+        cycleNum = woodpeckerState.currentCycle + 1;
+    }
+    
+    const newState = { elo, totalPuzzles: count, currentCycle: cycleNum, currentIndex: 0, timeRemaining: maxT, maxTime: maxT, mistakes: 0, status: 'playing' };
+    setWoodpeckerState(newState);
+    localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+    
+    setCurrentPuzzleIdx(0); setGlobalTime(maxT); setView('playing'); initPuzzle(0, puzzles);
+};
 
+const resumeWoodpecker = async () => {
+    let db = databases[woodpeckerState.elo];
+    if (!db || db.length === 0) { const allDbs = await loadAllDatabases(); db = allDbs[woodpeckerState.elo]; }
+    const puzzles = db.slice(0, woodpeckerState.totalPuzzles);
+    setWoodpeckerPuzzles(puzzles); setDailyPuzzles(puzzles);
+    setCurrentPuzzleIdx(woodpeckerState.currentIndex); setSelectedElo(woodpeckerState.elo);
+    setGlobalTime(woodpeckerState.timeRemaining); setView('playing'); initPuzzle(woodpeckerState.currentIndex, puzzles);
+};
+
+const finishWoodpecker = () => {
+    setIsAnalysisActive(false); 
+    if (engineWorker) engineWorker.postMessage('stop');
+    setIsPaused(true); setView('summary');
+};
           const animateSolutionAndFail = (didMakeWrongMove) => {
             setIsPaused(true);
             setIsAnimating(true);
@@ -823,6 +871,13 @@
                         saveDailyProgress(newTimes); 
                     }
                     return newTimes; 
+                });
+            } else if (gameMode === 'woodpecker') {
+                setWoodpeckerState(prev => {
+                    if(!prev) return prev;
+                    const newState = { ...prev, mistakes: prev.mistakes + 1 };
+                    localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+                    return newState;
                 });
             }
 
@@ -1043,6 +1098,18 @@
                 return;
             }
             
+            if (gameMode === 'woodpecker') {
+                if (status === 'solved') {
+                    setIsAnimating(true);
+                    initialMoveTimeout.current = setTimeout(() => { 
+                        setFlipped(true); 
+                        playSound('success');
+                        setIsAnimating(false); 
+                    }, 600);
+                }
+                return;
+            }
+            
             setPuzzleTimes(prev => {
               const newTimes = [...prev];
               const oldVal = newTimes[currentPuzzleIdx];
@@ -1096,44 +1163,54 @@
           };
 
           const nextPuzzle = () => {
-            if (isAnimating) return;
-            let nextIdx = currentPuzzleIdx + 1;
+    if (isAnimating) return;
+    let nextIdx = currentPuzzleIdx + 1;
 
-            if (gameMode === 'survival') {
-                if (puzzleState === 'failed') {
-                    finishSurvival(true);
-                } else if (nextIdx >= survivalPuzzles.length) {
-                    finishSurvival(true);
-                } else {
-                    initPuzzle(nextIdx, survivalPuzzles);
-                }
-                return;
+    if (gameMode === 'survival') {
+        if (puzzleState === 'failed' || nextIdx >= survivalPuzzles.length) { 
+            finishSurvival(true); 
+        } else {
+            initPuzzle(nextIdx, survivalPuzzles);
+        }
+        return;
+    }
+    
+    if (gameMode === 'woodpecker') {
+        const newState = { ...woodpeckerState, currentIndex: nextIdx, timeRemaining: globalTime };
+        if (nextIdx >= woodpeckerState.totalPuzzles) {
+             newState.status = 'completed';
+             setWoodpeckerState(newState); localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+             finishWoodpecker();
+        } else {
+             setWoodpeckerState(newState); localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+             setCurrentPuzzleIdx(nextIdx); initPuzzle(nextIdx, woodpeckerPuzzles);
+        }
+        return;
+    }
+    
+    if (!isPracticeMode) {
+        while(nextIdx < 5 && puzzleTimes[nextIdx] !== null) nextIdx++;
+        if (nextIdx < 5) initPuzzle(nextIdx);
+        else finishDaily(); 
+    } else {
+        const hKey = getHistoryKey(selectedDate, selectedElo);
+        const histDay = history[hKey];
+        const isCorrectionSession = histDay && (histDay.officialTimes || histDay.times).some(t => isFailedScore(t));
+        
+        if (isCorrectionSession) {
+            const remainingNA = puzzleTimes.findIndex((t, idx) => isFailedScore(t) && idx > currentPuzzleIdx);
+            if (remainingNA !== -1) initPuzzle(remainingNA);
+            else {
+                const anyNA = puzzleTimes.findIndex(t => isFailedScore(t));
+                if (anyNA !== -1) initPuzzle(anyNA);
+                else finishDaily(true); 
             }
-            
-            if (!isPracticeMode) {
-                while(nextIdx < 5 && puzzleTimes[nextIdx] !== null) nextIdx++;
-                if (nextIdx < 5) initPuzzle(nextIdx);
-                else finishDaily(); 
-            } else {
-                const hKey = getHistoryKey(selectedDate, selectedElo);
-                const histDay = history[hKey];
-                const isCorrectionSession = histDay && (histDay.officialTimes || histDay.times).some(t => isFailedScore(t));
-                
-                if (isCorrectionSession) {
-                    const remainingNA = puzzleTimes.findIndex((t, idx) => isFailedScore(t) && idx > currentPuzzleIdx);
-                    if (remainingNA !== -1) {
-                        initPuzzle(remainingNA);
-                    } else {
-                        const anyNA = puzzleTimes.findIndex(t => isFailedScore(t));
-                        if (anyNA !== -1) initPuzzle(anyNA);
-                        else finishDaily(true); 
-                    }
-                } else {
-                    if (nextIdx < 5) initPuzzle(nextIdx);
-                    else finishDaily(true); 
-                }
-            }
-          };
+        } else {
+            if (nextIdx < 5) initPuzzle(nextIdx);
+            else finishDaily(true); 
+        }
+    }
+};
 
           const finishSurvival = async (isGameOver = false) => {
               if (!isGameOver) {
@@ -1290,9 +1367,10 @@
                         </div>
                         
                         <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner">
-                            <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
-                            <button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
-                        </div>
+							<button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
+							<button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
+							<button onClick={() => setGameMode('woodpecker')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
+						</div>
 
                         <div className="w-full bg-slate-800 p-3 rounded-xl border border-slate-700 flex justify-between items-center shadow-md">
                             <div className="flex items-center gap-2 text-slate-300">
@@ -1345,6 +1423,55 @@
                     </div>
                 );
             }
+			
+	if (gameMode === 'woodpecker') {
+        return (
+            <div className="flex flex-col items-center p-4 sm:p-6 space-y-5 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto pb-20">
+                <div className="w-full flex justify-between items-center mt-2 sm:mt-4 mb-2 relative">
+                    <div className="w-10"></div>
+                    <h1 className="text-3xl sm:text-4xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
+                    <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg border border-slate-700 transition"><IconSettings /></button>
+                </div>
+                
+                <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner">
+                    <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
+                    <button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
+                    <button onClick={() => setGameMode('woodpecker')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
+                </div>
+
+                <div className="w-full">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Difficulté (Elo)</h3>
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                        {ELO_CATEGORIES.map(elo => (
+                            <button key={elo} onClick={() => setSelectedElo(elo)} className={`flex-1 min-w-[60px] py-2 rounded-lg font-bold text-sm transition ${selectedElo === elo ? 'bg-amber-500 text-slate-900 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}>{elo}</button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="w-full flex flex-col gap-4">
+                    { woodpeckerState ? (
+                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg text-center mt-4">
+                            <h2 className="text-2xl font-bold text-amber-400 mb-2">Cycle {woodpeckerState.currentCycle}</h2>
+                            <p className="text-slate-300 mb-4">Progression : {woodpeckerState.currentIndex} / {woodpeckerState.totalPuzzles} problèmes</p>
+                            <p className="text-slate-400 text-sm mb-6">Précision : {Math.round(((woodpeckerState.currentIndex - woodpeckerState.mistakes) / Math.max(1, woodpeckerState.currentIndex)) * 100)}%</p>
+                            <button onClick={resumeWoodpecker} className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-lg shadow-[0_0_15px_rgba(245,158,11,0.4)] transition"><IconPlay /> Reprendre</button>
+                            <button onClick={() => { if(window.confirm("Réinitialiser ?")) { setWoodpeckerState(null); localStorage.removeItem('chessWoodpecker_state'); } }} className="mt-4 text-xs text-slate-500 hover:text-red-400 transition w-full">Abandonner l'entraînement</button>
+                        </div>
+                    ) : (
+                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex flex-col items-center text-center mt-4">
+                            <h2 className="text-xl font-bold text-amber-400 mb-2">Série fixe (Pic Vert)</h2>
+                            <p className="text-slate-400 text-sm mb-6">Budget : 1 min/problème pour le Cycle 1.</p>
+                            <div className="flex gap-2 w-full mb-2">
+                                {[50, 100, 200].map(count => (
+                                    <button key={count} onClick={() => startWoodpeckerCycle(count, selectedElo)} className="flex-1 py-3 bg-slate-700 hover:bg-amber-600 rounded-lg text-white font-bold transition shadow-md">{count}</button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+	}	
 
             const hKey = getHistoryKey(selectedDate, selectedElo);
             const historyDay = history[hKey];
@@ -1400,6 +1527,7 @@
                 <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner">
                     <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
                     <button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
+                    <button onClick={() => setGameMode('woodpecker')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
                 </div>
 
                 <div className="w-full bg-slate-800 p-3 rounded-xl border border-slate-700 flex justify-between items-center shadow-md">
@@ -1594,7 +1722,7 @@
                                             </div>
                                         </div>
                                     );
-                                }
+                                }				
                                 
                                 const stats = getScoreStats(score.times);
                                 const isCurrentPlayer = score.userId === fbUser?.uid;
@@ -1644,7 +1772,7 @@
                 </div>
               );
           };
-
+		  
           const renderSummary = () => {
             if (gameMode === 'survival') {
                 const todaySurv = survivalHistory[selectedDate];
@@ -1678,7 +1806,24 @@
                   </div>
                 );
             }
+if (gameMode === 'woodpecker') {
+    return (
+        <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 pb-12 overflow-y-auto">
+            <h1 className="text-4xl font-black text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
+            <div className="text-center">
+                <h2 className="text-4xl font-bold text-amber-400 mb-1">Entraînement Terminé !</h2>
+                <p className="text-slate-400 text-sm">Cycle {woodpeckerState?.currentCycle}</p>
+            </div>
+            
+            <div className="w-full text-center p-6 bg-slate-800 border border-amber-500/50 rounded-xl shadow-2xl">
+                <p className="text-sm text-slate-300 mb-2">Erreurs commises</p>
+                <p className="text-5xl font-black text-red-400">{woodpeckerState?.mistakes} <span className="text-2xl text-slate-500">/ {woodpeckerState?.totalPuzzles}</span></p>
+            </div>
 
+            <button onClick={() => setView('home')} className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition text-sm">Retour à l'accueil</button>
+        </div>
+    );
+}
             const displayTimes = puzzleTimes;
             const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'))).length;
             const isLocalPerfect = localSolvedCount === 5;
@@ -1744,7 +1889,8 @@
           };
 
           const renderBoard = () => {
-            const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+            const currentPuzzle = gameMode === 'woodpecker' ? woodpeckerPuzzles[currentPuzzleIdx] : dailyPuzzles[currentPuzzleIdx];
+            if (!currentPuzzle) return null;
             const isBlackToPlay = currentPuzzle.color === 'b';
             const currentTheme = BOARD_THEMES[boardTheme] || BOARD_THEMES.vert;
 
@@ -1801,7 +1947,8 @@
           };
 
           const renderPlaying = () => {
-            const currentPuzzle = dailyPuzzles[currentPuzzleIdx];
+            const currentPuzzle = gameMode === 'woodpecker' ? woodpeckerPuzzles[currentPuzzleIdx] : dailyPuzzles[currentPuzzleIdx];
+            if (!currentPuzzle) return null;
             
             const hKey = getHistoryKey(selectedDate, selectedElo);
             const histDay = history[hKey];
@@ -1809,7 +1956,9 @@
             const hasRemainingNAs = puzzleTimes.some(t => isFailedScore(t));
 
             let nextBtnText = "Suivant";
-            if (gameMode === 'survival') {
+            if (gameMode === 'woodpecker') {
+                nextBtnText = currentPuzzleIdx + 1 >= woodpeckerState?.totalPuzzles ? "Terminer le Cycle" : "Problème Suivant";
+            } else if (gameMode === 'survival') {
                 if (puzzleState === 'failed') {
                     nextBtnText = "Terminer la Survie";
                 } else if (currentPuzzleIdx + 1 >= survivalPuzzles.length) {
@@ -1861,7 +2010,7 @@
                         Tac-Tic Chess
                     </h1>
 
-                    {gameMode === 'daily' ? (
+                    {gameMode === 'daily' || gameMode === 'woodpecker' ? (
                         <div className={`text-lg sm:text-xl font-mono font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner shrink-0 ${globalTime < 60 ? 'text-red-400 animate-pulse border-red-500/50' : 'text-slate-100'}`}>
                             {formatTime(globalTime)}
                         </div>
@@ -1872,7 +2021,12 @@
                     )}
                 </div>
 
-                {gameMode === 'survival' ? (
+                {gameMode === 'woodpecker' ? (
+                    <div className="w-full flex justify-between items-center mb-3 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
+                        <div className="text-lg font-black text-slate-300">Progression: <span className="text-amber-400">{currentPuzzleIdx}</span> / {woodpeckerState?.totalPuzzles}</div>
+                        <div className="text-lg font-black text-red-400">Fautes: {woodpeckerState?.mistakes}</div>
+                    </div>
+                ) : gameMode === 'survival' ? (
                     <div className="w-full flex justify-center items-center mb-3 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
                         <div className="text-2xl font-black text-amber-400 tracking-wider">Score : {currentPuzzleIdx} <span className="text-lg text-slate-500">/ {survivalPuzzles.length || 175}</span></div>
                     </div>
@@ -2043,6 +2197,18 @@
                       puzzleState === 'playing' ? (
                           <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-2.5 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-base shadow-lg">
                               Abandonner la Survie
+                          </button>
+                      ) : (
+                          <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg text-base transition">
+                              {nextBtnText}
+                          </button>
+                      )
+                  )}
+
+                  {gameMode === 'woodpecker' && (
+                      puzzleState === 'playing' ? (
+                          <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-2.5 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-base shadow-lg">
+                              Voir la solution (NA)
                           </button>
                       ) : (
                           <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating} className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg text-base transition">
