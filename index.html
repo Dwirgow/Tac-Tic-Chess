@@ -574,19 +574,23 @@
           }, [selectedDate, selectedElo, history, databases, gameMode]);
 
           useEffect(() => {
-			let interval;
-			// ✅ On ajoute la condition pour le mode Pic Vert
-			if (view === 'playing' && !isPaused && (gameMode === 'daily' || gameMode === 'woodpecker')) {
-				interval = setInterval(() => {
-					setGlobalTime(prev => {
-						if (prev <= 1) { handleTimeOut(); return 0; }
-						return prev - 1;
-            });
-            setCurrentPuzzleTime(prev => prev + 1);
-        }, 1000);
-    }
-    return () => clearInterval(interval);
-}, [view, isPaused, gameMode]);
+            let interval;
+            if (view === 'playing' && !isPaused && (gameMode === 'daily' || gameMode === 'woodpecker' || gameMode === 'survival')) {
+                interval = setInterval(() => {
+                    setGlobalTime(prev => {
+                        // En mode Pic Vert, le Cycle 1 compte le temps écoulé (de 0 vers l'infini)
+                        if (gameMode === 'woodpecker' && woodpeckerState?.currentCycle === 1) {
+                            return prev + 1;
+                        }
+                        // Sinon c'est un compte à rebours
+                        if (prev <= 1 && gameMode !== 'survival') { handleTimeOut(); return 0; }
+                        return gameMode === 'survival' ? prev + 1 : prev - 1;
+                    });
+                    setCurrentPuzzleTime(prev => prev + 1);
+                }, 1000);
+            }
+            return () => clearInterval(interval);
+          }, [view, isPaused, gameMode, woodpeckerState]);
 
           const saveScoreToFirebase = async (mergedTimes) => {
               if (!fbUser || !fbDb || !window.FirebaseLib) return;
@@ -665,12 +669,24 @@
                   return newTimes;
                 });
                 setTimeout(() => finishDaily(), 2000);
-				} 
-				// ✅ On ajoute l'action à faire si le temps est écoulé en mode Pic Vert
-				else if (gameMode === 'woodpecker') {
-					setTimeout(() => finishWoodpecker(), 2000);
-				}
-			};
+            } else if (gameMode === 'woodpecker') {
+                setWoodpeckerState(prev => {
+                    const newState = { ...prev, status: 'completed', timeTaken: prev.maxTime };
+                    
+                    // CALCUL ET SAUVEGARDE DES STATS DANS L'HISTORIQUE
+                    const accuracy = Math.round(((prev.totalPuzzles - prev.mistakes) / prev.totalPuzzles) * 100);
+                    const solved = Math.max(1, prev.currentIndex);
+                    const avgTime = Math.floor(newState.timeTaken / solved);
+                    
+                    const filteredHistory = (prev.history || []).filter(h => h.cycle !== prev.currentCycle);
+                    newState.history = [...filteredHistory, { cycle: prev.currentCycle, accuracy, avgTime, timeout: true }];
+
+                    localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+                    return newState;
+                });
+                setTimeout(() => finishWoodpecker(), 2000);
+            }
+          };
 
           useEffect(() => {
               if ((view !== 'leaderboard' && view !== 'home') || !fbDb || !fbUser) return;
@@ -821,43 +837,83 @@
             setView('playing');
             initPuzzle(firstUnsolved);
           };
-const startWoodpeckerCycle = async (count, elo, isNextCycle = false) => {
-    let db = databases[elo];
-    if (!db || db.length === 0) { const allDbs = await loadAllDatabases(); db = allDbs[elo]; }
-    if (!db) return;
-    
-    const puzzles = db.slice(0, count);
-    setWoodpeckerPuzzles(puzzles);
-    setDailyPuzzles(puzzles); // Astuce : on réutilise dailyPuzzles pour l'affichage
-    
-    let maxT = count * 60; // 1 min par problème pour le Cycle 1
-    let cycleNum = 1;
-    if (isNextCycle && woodpeckerState) {
-        maxT = Math.floor(woodpeckerState.maxTime / 2);
-        cycleNum = woodpeckerState.currentCycle + 1;
-    }
-    
-    const newState = { elo, totalPuzzles: count, currentCycle: cycleNum, currentIndex: 0, timeRemaining: maxT, maxTime: maxT, mistakes: 0, status: 'playing' };
-    setWoodpeckerState(newState);
-    localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
-    
-    setCurrentPuzzleIdx(0); setGlobalTime(maxT); setView('playing'); initPuzzle(0, puzzles);
-};
+		const startWoodpeckerCycle = async (count, elo) => {
+            let db = databases[elo];
+            if (!db || db.length === 0) { const allDbs = await loadAllDatabases(); db = allDbs[elo]; }
+            if (!db) return;
+            
+            const puzzles = db.slice(0, count);
+            setWoodpeckerPuzzles(puzzles);
+            setDailyPuzzles(puzzles);
+            
+            const newState = { 
+                elo, originalCount: count, totalPuzzles: count, currentCycle: 1, 
+                currentIndex: 0, timeRemaining: 0, maxTime: 0, timeTaken: 0, 
+                mistakes: 0, failedQueue: [], history: [], status: 'playing' 
+            };
+            setWoodpeckerState(newState);
+            localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+            
+            setCurrentPuzzleIdx(0); setGlobalTime(0); setView('playing'); initPuzzle(0, puzzles);
+          };
 
-const resumeWoodpecker = async () => {
-    let db = databases[woodpeckerState.elo];
-    if (!db || db.length === 0) { const allDbs = await loadAllDatabases(); db = allDbs[woodpeckerState.elo]; }
-    const puzzles = db.slice(0, woodpeckerState.totalPuzzles);
-    setWoodpeckerPuzzles(puzzles); setDailyPuzzles(puzzles);
-    setCurrentPuzzleIdx(woodpeckerState.currentIndex); setSelectedElo(woodpeckerState.elo);
-    setGlobalTime(woodpeckerState.timeRemaining); setView('playing'); initPuzzle(woodpeckerState.currentIndex, puzzles);
-};
+          const handleNextWoodpeckerCycle = (isRetry = false) => {
+            const cycleNum = isRetry ? woodpeckerState.currentCycle : woodpeckerState.currentCycle + 1;
+            const originalCount = woodpeckerState.originalCount;
 
-const finishWoodpecker = () => {
-    setIsAnalysisActive(false); 
-    if (engineWorker) engineWorker.postMessage('stop');
-    setIsPaused(true); setView('summary');
-};
+            // Logique de temps : T/2 par rapport au cycle précédent
+            let nextMaxTime = woodpeckerState.maxTime;
+            if (!isRetry) {
+                if (woodpeckerState.currentCycle === 1) nextMaxTime = Math.floor(woodpeckerState.timeTaken / 2);
+                else nextMaxTime = Math.floor(woodpeckerState.maxTime / 2);
+            }
+
+            // Plancher de sécurité : 5 secondes par problème minimum
+            const floorTime = originalCount * 5;
+            if (nextMaxTime < floorTime && woodpeckerState.currentCycle !== 1) nextMaxTime = floorTime;
+
+            let db = databases[woodpeckerState.elo];
+            const puzzles = db.slice(0, originalCount);
+            setWoodpeckerPuzzles(puzzles);
+            setDailyPuzzles(puzzles);
+
+            const newState = {
+                ...woodpeckerState, totalPuzzles: originalCount, currentCycle: cycleNum,
+                currentIndex: 0, maxTime: nextMaxTime, timeRemaining: nextMaxTime,
+                mistakes: 0, failedQueue: [], status: 'playing', timeTaken: 0
+            };
+
+            // Réinitialisation si c'est un retry du cycle 1
+            if (cycleNum === 1) { newState.timeRemaining = 0; newState.maxTime = 0; }
+
+            setWoodpeckerState(newState);
+            localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+
+            setCurrentPuzzleIdx(0); setGlobalTime(newState.timeRemaining);
+            setView('playing'); initPuzzle(0, puzzles);
+          };
+
+          const resumeWoodpecker = async () => {
+            let db = databases[woodpeckerState.elo];
+            if (!db || db.length === 0) { const allDbs = await loadAllDatabases(); db = allDbs[woodpeckerState.elo]; }
+            
+            let basePuzzles = db.slice(0, woodpeckerState.originalCount);
+            // On réinjecte les problèmes de la file d'attente
+            let extraPuzzles = (woodpeckerState.failedQueue || []).map(id => db.find(p => p.id === id)).filter(Boolean);
+            let allPuzzles = [...basePuzzles, ...extraPuzzles];
+            
+            setWoodpeckerPuzzles(allPuzzles); setDailyPuzzles(allPuzzles);
+            
+            setCurrentPuzzleIdx(woodpeckerState.currentIndex); setSelectedElo(woodpeckerState.elo);
+            setGlobalTime(woodpeckerState.timeRemaining); setView('playing'); 
+            initPuzzle(woodpeckerState.currentIndex, allPuzzles);
+          };
+
+          const finishWoodpecker = () => {
+              setIsAnalysisActive(false); 
+              if (engineWorker) engineWorker.postMessage('stop');
+              setIsPaused(true); setView('summary');
+          };
           const animateSolutionAndFail = (didMakeWrongMove) => {
             setIsPaused(true);
             setIsAnimating(true);
@@ -873,12 +929,23 @@ const finishWoodpecker = () => {
                     return newTimes; 
                 });
             } else if (gameMode === 'woodpecker') {
+                const failedPuz = dailyPuzzles[currentPuzzleIdx];
                 setWoodpeckerState(prev => {
                     if(!prev) return prev;
-                    const newState = { ...prev, mistakes: prev.mistakes + 1 };
+                    const newQueue = [...(prev.failedQueue || []), failedPuz.id];
+                    const newState = { ...prev, mistakes: prev.mistakes + 1, totalPuzzles: prev.totalPuzzles + 1, failedQueue: newQueue, timeRemaining: globalTime };
                     localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
                     return newState;
                 });
+                
+                // On repousse le problème raté à la fin du tableau
+                setWoodpeckerPuzzles(prev => [...prev, failedPuz]);
+                setDailyPuzzles(prev => [...prev, failedPuz]);
+
+                // Pénalité de temps : +10s au Cycle 1 (compteur haut), -10s aux autres cycles (compte à rebours)
+                if (didMakeWrongMove) {
+                    setGlobalTime(prev => woodpeckerState.currentCycle === 1 ? prev + 10 : Math.max(0, prev - 10));
+                }
             }
 
             const startAnimation = () => {
@@ -1176,17 +1243,26 @@ const finishWoodpecker = () => {
     }
     
     if (gameMode === 'woodpecker') {
-        const newState = { ...woodpeckerState, currentIndex: nextIdx, timeRemaining: globalTime };
-        if (nextIdx >= woodpeckerState.totalPuzzles) {
-             newState.status = 'completed';
-             setWoodpeckerState(newState); localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
-             finishWoodpecker();
-        } else {
-             setWoodpeckerState(newState); localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
-             setCurrentPuzzleIdx(nextIdx); initPuzzle(nextIdx, woodpeckerPuzzles);
-        }
-        return;
-    }
+                const newState = { ...woodpeckerState, currentIndex: nextIdx, timeRemaining: globalTime };
+                if (nextIdx >= woodpeckerState.totalPuzzles) {
+                     newState.status = 'completed';
+                     newState.timeTaken = woodpeckerState.currentCycle === 1 ? globalTime : (woodpeckerState.maxTime - globalTime);
+                     
+                     // CALCUL ET SAUVEGARDE DES STATS DANS L'HISTORIQUE
+                     const accuracy = Math.round(((woodpeckerState.totalPuzzles - woodpeckerState.mistakes) / woodpeckerState.totalPuzzles) * 100);
+                     const avgTime = Math.floor(newState.timeTaken / woodpeckerState.totalPuzzles);
+                     
+                     const filteredHistory = (woodpeckerState.history || []).filter(h => h.cycle !== woodpeckerState.currentCycle);
+                     newState.history = [...filteredHistory, { cycle: woodpeckerState.currentCycle, accuracy, avgTime, timeout: false }];
+                     
+                     setWoodpeckerState(newState); localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+                     finishWoodpecker();
+                } else {
+                     setWoodpeckerState(newState); localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+                     setCurrentPuzzleIdx(nextIdx); initPuzzle(nextIdx, woodpeckerPuzzles);
+                }
+                return;
+            }
     
     if (!isPracticeMode) {
         while(nextIdx < 5 && puzzleTimes[nextIdx] !== null) nextIdx++;
@@ -1439,36 +1515,89 @@ const finishWoodpecker = () => {
                     <button onClick={() => setGameMode('woodpecker')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
                 </div>
 
-                <div className="w-full">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Difficulté (Elo)</h3>
-                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-                        {ELO_CATEGORIES.map(elo => (
-                            <button key={elo} onClick={() => setSelectedElo(elo)} className={`flex-1 min-w-[60px] py-2 rounded-lg font-bold text-sm transition ${selectedElo === elo ? 'bg-amber-500 text-slate-900 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}>{elo}</button>
-                        ))}
+                {!woodpeckerState && (
+                    <div className="w-full">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Difficulté (Elo)</h3>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                            {ELO_CATEGORIES.map(elo => (
+                                <button key={elo} onClick={() => setSelectedElo(elo)} className={`flex-1 min-w-[60px] py-2 rounded-lg font-bold text-sm transition ${selectedElo === elo ? 'bg-amber-500 text-slate-900 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}>{elo}</button>
+                            ))}
+                        </div>
                     </div>
-                </div>
+                )}
 
-                <div className="w-full flex flex-col gap-4">
-                    { woodpeckerState ? (
-                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg text-center mt-4">
-                            <h2 className="text-2xl font-bold text-amber-400 mb-2">Cycle {woodpeckerState.currentCycle}</h2>
-                            <p className="text-slate-300 mb-4">Progression : {woodpeckerState.currentIndex} / {woodpeckerState.totalPuzzles} problèmes</p>
-                            <p className="text-slate-400 text-sm mb-6">Précision : {Math.round(((woodpeckerState.currentIndex - woodpeckerState.mistakes) / Math.max(1, woodpeckerState.currentIndex)) * 100)}%</p>
-                            <button onClick={resumeWoodpecker} className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-lg shadow-[0_0_15px_rgba(245,158,11,0.4)] transition"><IconPlay /> Reprendre</button>
-                            <button onClick={() => { if(window.confirm("Réinitialiser ?")) { setWoodpeckerState(null); localStorage.removeItem('chessWoodpecker_state'); } }} className="mt-4 text-xs text-slate-500 hover:text-red-400 transition w-full">Abandonner l'entraînement</button>
+                <div className="w-full flex flex-col gap-4 mt-2">
+                            { woodpeckerState ? (
+                                <div className="bg-slate-800 p-5 sm:p-6 rounded-xl border border-slate-700 shadow-lg text-center w-full">
+                                    <h2 className="text-2xl font-bold text-amber-400 mb-2">Cycle {woodpeckerState.currentCycle}</h2>
+                                    
+                                    {/* --- GRILLE DES KPI --- */}
+                                    <div className="grid grid-cols-2 gap-3 mb-6 mt-4">
+                                        <div className="bg-slate-900 p-3 rounded-lg border border-slate-700 shadow-inner flex flex-col justify-center items-center">
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Avancement</span>
+                                            <span className="text-xl font-black text-amber-400">{woodpeckerState.currentIndex} <span className="text-sm text-slate-500">/ {woodpeckerState.totalPuzzles}</span></span>
+                                        </div>
+                                        <div className="bg-slate-900 p-3 rounded-lg border border-slate-700 shadow-inner flex flex-col justify-center items-center">
+											<span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Précision</span>
+											<span className="text-xl font-black text-emerald-400">
+												{woodpeckerState.mistakes === 0 ? 100 : Math.max(0, Math.round(((woodpeckerState.currentIndex - woodpeckerState.mistakes) / Math.max(1, woodpeckerState.currentIndex)) * 100))}%
+											</span>
+										</div>
+                                        <div className="bg-slate-900 p-3 rounded-lg border border-slate-700 shadow-inner flex flex-col justify-center items-center">
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Tps Moyen / PRB</span>
+                                            <span className="text-xl font-black text-indigo-400">
+                                                {woodpeckerState.currentIndex > 0 ? formatTime(Math.floor((woodpeckerState.currentCycle === 1 ? woodpeckerState.timeRemaining : (woodpeckerState.maxTime - woodpeckerState.timeRemaining)) / woodpeckerState.currentIndex)) : '--:--'}
+                                            </span>
+                                        </div>
+                                        <div className="bg-slate-900 p-3 rounded-lg border border-slate-700 shadow-inner flex flex-col justify-center items-center">
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Chrono</span>
+                                            <span className={`text-xl font-black ${(woodpeckerState.currentCycle > 1 && woodpeckerState.timeRemaining < 60) ? 'text-red-400 animate-pulse' : 'text-slate-200'}`}>
+                                                {formatTime(woodpeckerState.timeRemaining)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {/* --- NOUVEAU : ENCART HISTORIQUE DES CYCLES --- */}
+                                    {woodpeckerState.history && woodpeckerState.history.length > 0 && (
+                                        <div className="w-full mb-6 bg-slate-900 p-3 rounded-xl border border-slate-700 shadow-inner">
+                                            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 text-left">Comparatif des cycles</h3>
+                                            <div className="space-y-2">
+                                                {woodpeckerState.history.sort((a,b) => a.cycle - b.cycle).map(h => (
+                                                    <div key={h.cycle} className="flex justify-between items-center bg-slate-800 p-2 rounded-lg border border-slate-700/50">
+                                                        <span className="font-bold text-sm text-amber-400">Cycle {h.cycle} {h.timeout && <span className="text-red-400 text-[10px] ml-1">(Tps écoulé)</span>}</span>
+                                                        <div className="flex gap-4 text-xs">
+                                                            <div className="flex flex-col items-center w-12">
+                                                                <span className="text-[9px] text-slate-500 uppercase">Précision</span>
+                                                                <span className="font-mono text-emerald-400 font-bold">{h.accuracy}%</span>
+                                                            </div>
+                                                            <div className="flex flex-col items-center w-12">
+                                                                <span className="text-[9px] text-slate-500 uppercase">Tps/Prob</span>
+                                                                <span className="font-mono text-indigo-400 font-bold">{formatTime(h.avgTime)}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <button onClick={resumeWoodpecker} className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-lg shadow-[0_0_15px_rgba(245,158,11,0.4)] transition flex items-center justify-center gap-2">
+                                        <IconPlay /> Reprendre
+                                    </button>
+                                    <button onClick={() => { if(window.confirm("Abandonner cet entraînement et tout remettre à zéro ?")) { setWoodpeckerState(null); localStorage.removeItem('chessWoodpecker_state'); } }} className="mt-4 text-xs font-bold text-slate-500 hover:text-red-400 transition w-full">
+                                        Abandonner l'entraînement
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex flex-col items-center text-center w-full">
+                                    <h2 className="text-xl font-bold text-amber-400 mb-2">Méthode Woodpecker</h2>
+                                    <p className="text-slate-400 text-sm mb-6">Le but : l'assimilation subconsciente par la répétition sur 7 cycles consécutifs. Sélectionnez le elo de la catégorie en-dessous de votre elo chess.com, puis résolvez le set complet. À chaque nouveau cycle, le temps alloué sera divisé par deux !</p>
+                                    <div className="flex gap-2 w-full mb-2">
+                                        {[50, 100, 200].map(count => (
+                                            <button key={count} onClick={() => startWoodpeckerCycle(count, selectedElo)} className="flex-1 py-3 bg-slate-700 hover:bg-amber-600 rounded-lg text-white font-bold transition shadow-md">{count} Puz.</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    ) : (
-                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex flex-col items-center text-center mt-4">
-                            <h2 className="text-xl font-bold text-amber-400 mb-2">Série fixe (Pic Vert)</h2>
-                            <p className="text-slate-400 text-sm mb-6">Budget : 1 min/problème pour le Cycle 1.</p>
-                            <div className="flex gap-2 w-full mb-2">
-                                {[50, 100, 200].map(count => (
-                                    <button key={count} onClick={() => startWoodpeckerCycle(count, selectedElo)} className="flex-1 py-3 bg-slate-700 hover:bg-amber-600 rounded-lg text-white font-bold transition shadow-md">{count}</button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
             </div>
         );
 	}	
@@ -1806,24 +1935,57 @@ const finishWoodpecker = () => {
                   </div>
                 );
             }
-if (gameMode === 'woodpecker') {
-    return (
-        <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 pb-12 overflow-y-auto">
-            <h1 className="text-4xl font-black text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
-            <div className="text-center">
-                <h2 className="text-4xl font-bold text-amber-400 mb-1">Entraînement Terminé !</h2>
-                <p className="text-slate-400 text-sm">Cycle {woodpeckerState?.currentCycle}</p>
-            </div>
-            
-            <div className="w-full text-center p-6 bg-slate-800 border border-amber-500/50 rounded-xl shadow-2xl">
-                <p className="text-sm text-slate-300 mb-2">Erreurs commises</p>
-                <p className="text-5xl font-black text-red-400">{woodpeckerState?.mistakes} <span className="text-2xl text-slate-500">/ {woodpeckerState?.totalPuzzles}</span></p>
-            </div>
+			if (gameMode === 'woodpecker') {
+                const isFinished = woodpeckerState?.status === 'completed';
+                const isTimeOut = woodpeckerState?.currentCycle > 1 && woodpeckerState?.timeRemaining <= 0;
+                
+                return (
+                    <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 pb-12 overflow-y-auto">
+                        <h1 className="text-4xl font-black text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
+                        <div className="text-center">
+                            <h2 className="text-4xl font-bold text-amber-400 mb-1">{isTimeOut ? "Temps Écoulé !" : (isFinished ? "Cycle Terminé !" : "Entraînement en pause")}</h2>
+                            <p className="text-slate-400 text-sm">Cycle {woodpeckerState?.currentCycle} sur 7</p>
+                        </div>
+                        
+                        <div className="w-full grid grid-cols-2 gap-4">
+                            <div className="bg-slate-900 p-3 rounded-lg border border-slate-700 shadow-inner flex flex-col justify-center items-center">
+								<span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Précision</span>
+								<span className="text-xl font-black text-emerald-400">
+									{woodpeckerState.currentIndex === 0 ? 100 : Math.max(0, Math.round(((woodpeckerState.currentIndex - woodpeckerState.mistakes) / woodpeckerState.currentIndex) * 100))}%
+								</span>
+							</div>
+                            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center shadow-lg">
+                                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Temps Total</p>
+                                <p className={`text-3xl font-black ${isTimeOut ? 'text-red-400' : 'text-amber-400'}`}>{formatTime(woodpeckerState.timeTaken)}</p>
+                            </div>
+                            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center shadow-lg col-span-2 flex justify-around items-center">
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Fautes (-10s)</p>
+                                    <p className="text-3xl font-black text-red-400">{woodpeckerState?.mistakes}</p>
+                                </div>
+                                <div className="w-px h-10 bg-slate-700"></div>
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Problèmes Total</p>
+                                    <p className="text-3xl font-black text-indigo-400">{woodpeckerState?.totalPuzzles}</p>
+                                </div>
+                            </div>
+                        </div>
 
-            <button onClick={() => setView('home')} className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition text-sm">Retour à l'accueil</button>
-        </div>
-    );
-}
+                        {isFinished && woodpeckerState.currentCycle < 7 && !isTimeOut && (
+                            <button onClick={() => handleNextWoodpeckerCycle(false)} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition text-lg flex justify-center items-center gap-2 mt-4">
+                                <IconPlay /> Démarrer le Cycle {woodpeckerState.currentCycle + 1}
+                            </button>
+                        )}
+                        {isTimeOut && (
+                            <button onClick={() => { if(window.confirm("Recommencer ce cycle avec le même temps limite ?")) handleNextWoodpeckerCycle(true) }} className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg transition text-lg flex justify-center items-center gap-2 mt-4">
+                                <IconPlay /> Réessayer le Cycle {woodpeckerState.currentCycle}
+                            </button>
+                        )}
+
+                        <button onClick={() => setView('home')} className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition text-sm mt-2">Retour à l'accueil</button>
+                    </div>
+                );
+            }
             const displayTimes = puzzleTimes;
             const localSolvedCount = displayTimes.filter(t => typeof t === 'number' || t === 'NA_solved' || (typeof t === 'string' && t.includes('_NA'))).length;
             const isLocalPerfect = localSolvedCount === 5;
@@ -2000,8 +2162,30 @@ if (gameMode === 'woodpecker') {
                 {/* EN-TÊTE AVEC TITRE INTÉGRÉ ET FIXE */}
                 <div className="w-full flex justify-between items-center mb-4 shrink-0">
                     <button onClick={() => {
-                        if (gameMode === 'survival') { setView('home'); }
-                        else { finishDaily(true); }
+                        if (gameMode === 'woodpecker') {
+                            let newIdx = currentPuzzleIdx;
+                            // Si le problème est terminé (résolu ou raté), on comptabilise l'avancement avant de quitter
+                            if (puzzleState !== 'playing') {
+                                newIdx = currentPuzzleIdx + 1;
+                            }
+                            setWoodpeckerState(prev => {
+                                if(!prev) return prev;
+                                const newState = { ...prev, currentIndex: newIdx, timeRemaining: globalTime };
+                                if (newIdx >= prev.totalPuzzles) {
+                                    newState.status = 'completed';
+                                    newState.timeTaken = prev.currentCycle === 1 ? globalTime : (prev.maxTime - globalTime);
+                                }
+                                localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
+                                return newState;
+                            });
+                            setIsAnalysisActive(false); 
+                            if (engineWorker) engineWorker.postMessage('stop');
+                            setView('home');
+                        } else if (gameMode === 'survival') { 
+                            setView('home'); 
+                        } else { 
+                            finishDaily(true); 
+                        }
                     }} className="flex items-center gap-1 text-slate-400 hover:text-white transition font-bold text-xs sm:text-sm bg-slate-800 py-1.5 px-2 sm:py-2 sm:px-3 rounded-lg border border-slate-700 shrink-0">
                         <IconArrowLeft size={16} /> Accueil
                     </button>
@@ -2011,7 +2195,12 @@ if (gameMode === 'woodpecker') {
                     </h1>
 
                     {gameMode === 'daily' || gameMode === 'woodpecker' ? (
-                        <div className={`text-lg sm:text-xl font-mono font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner shrink-0 ${globalTime < 60 ? 'text-red-400 animate-pulse border-red-500/50' : 'text-slate-100'}`}>
+                        <div className={`text-lg sm:text-xl font-mono font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner shrink-0 ${
+                            // L'alerte rouge ne s'active QUE si on est en compte à rebours (Daily ou Cycle > 1) et sous les 60s
+                            ((gameMode === 'daily' || (gameMode === 'woodpecker' && woodpeckerState?.currentCycle > 1)) && globalTime < 60) 
+                            ? 'text-red-400 animate-pulse border-red-500/50' 
+                            : 'text-slate-100'
+                        }`}>
                             {formatTime(globalTime)}
                         </div>
                     ) : (
