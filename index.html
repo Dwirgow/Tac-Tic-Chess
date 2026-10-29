@@ -842,7 +842,10 @@
             if (!db || db.length === 0) { const allDbs = await loadAllDatabases(); db = allDbs[elo]; }
             if (!db) return;
             
-            const puzzles = db.slice(0, count);
+            // ON MÉLANGE TOUTE LA BASE AVANT DE SÉLECTIONNER LES PROBLÈMES
+            const shuffledDb = shuffleArray(db, Date.now().toString());
+            const puzzles = shuffledDb.slice(0, count);
+            
             setWoodpeckerPuzzles(puzzles);
             setDailyPuzzles(puzzles);
             
@@ -872,8 +875,8 @@
             const floorTime = originalCount * 5;
             if (nextMaxTime < floorTime && woodpeckerState.currentCycle !== 1) nextMaxTime = floorTime;
 
-           let db = databases[woodpeckerState.elo];
-        	let puzzles = db.slice(0, originalCount);
+            let db = databases[woodpeckerState.elo];
+            let puzzles = db.slice(0, originalCount);
             
             // On mélange l'ordre des problèmes pour chaque nouveau cycle afin d'éviter la mémoire séquentielle
             if (!isRetry) {
