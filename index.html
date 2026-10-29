@@ -872,8 +872,14 @@
             const floorTime = originalCount * 5;
             if (nextMaxTime < floorTime && woodpeckerState.currentCycle !== 1) nextMaxTime = floorTime;
 
-            let db = databases[woodpeckerState.elo];
-            const puzzles = db.slice(0, originalCount);
+           let db = databases[woodpeckerState.elo];
+        	let puzzles = db.slice(0, originalCount);
+            
+            // On mélange l'ordre des problèmes pour chaque nouveau cycle afin d'éviter la mémoire séquentielle
+            if (!isRetry) {
+                puzzles = shuffleArray(puzzles, Date.now().toString());
+            }
+
             setWoodpeckerPuzzles(puzzles);
             setDailyPuzzles(puzzles);
 
