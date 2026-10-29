@@ -353,6 +353,8 @@
           const [isPracticeMode, setIsPracticeMode] = useState(false); 
           const [history, setHistory] = useState({});
           const [survivalHistory, setSurvivalHistory] = useState({});
+		  const [rushState, setRushState] = useState({ score: 0, mistakes: 0 });
+          const [rushLeaderboard, setRushLeaderboard] = useState([]);
 		  
 		  const [woodpeckerState, setWoodpeckerState] = useState(() => {
 			const saved = localStorage.getItem('chessWoodpecker_state');
@@ -575,7 +577,7 @@
 
           useEffect(() => {
             let interval;
-            if (view === 'playing' && !isPaused && (gameMode === 'daily' || gameMode === 'woodpecker' || gameMode === 'survival')) {
+            if (view === 'playing' && !isPaused && (gameMode === 'daily' || gameMode === 'woodpecker' || gameMode === 'survival' || gameMode === 'rush')) {
                 interval = setInterval(() => {
                     setGlobalTime(prev => {
                         // En mode Pic Vert, le Cycle 1 compte le temps écoulé (de 0 vers l'infini)
@@ -583,7 +585,7 @@
                             return prev + 1;
                         }
                         // Sinon c'est un compte à rebours
-                        if (prev <= 1 && gameMode !== 'survival') { handleTimeOut(); return 0; }
+                        if (prev <= 1 && (gameMode === 'daily' || gameMode === 'rush')) { handleTimeOut(); return 0; }
                         return gameMode === 'survival' ? prev + 1 : prev - 1;
                     });
                     setCurrentPuzzleTime(prev => prev + 1);
@@ -673,7 +675,6 @@
                 setWoodpeckerState(prev => {
                     const newState = { ...prev, status: 'completed', timeTaken: prev.maxTime };
                     
-                    // CALCUL ET SAUVEGARDE DES STATS DANS L'HISTORIQUE
                     const accuracy = Math.round(((prev.totalPuzzles - prev.mistakes) / prev.totalPuzzles) * 100);
                     const solved = Math.max(1, prev.currentIndex);
                     const avgTime = Math.floor(newState.timeTaken / solved);
@@ -685,6 +686,8 @@
                     return newState;
                 });
                 setTimeout(() => finishWoodpecker(), 2000);
+            } else if (gameMode === 'rush') {
+                finishRush(rushState.score);
             }
           };
 
@@ -709,13 +712,23 @@
                       setIsFetchingLb(false);
                   }, (error) => setIsFetchingLb(false));
                   return unsubscribe;
-              } else {
+              } else if (gameMode === 'survival') {
                   const colRef = collection(fbDb, 'artifacts', 'tacticchess', 'public', 'data', 'survival_scores');
                   const unsubscribe = onSnapshot(colRef, (snapshot) => {
                       const allDocs = snapshot.docs.map(d => d.data());
                       const dayScores = allDocs.filter(s => s.date === selectedDate);
                       dayScores.sort((a, b) => b.score - a.score);
                       setSurvivalLeaderboard(dayScores);
+                      setIsFetchingLb(false);
+                  }, (error) => setIsFetchingLb(false));
+                  return unsubscribe;
+              } else if (gameMode === 'rush') {
+                  const colRef = collection(fbDb, 'artifacts', 'tacticchess', 'public', 'data', 'rush_scores');
+                  const unsubscribe = onSnapshot(colRef, (snapshot) => {
+                      const allDocs = snapshot.docs.map(d => d.data());
+                      const dayScores = allDocs.filter(s => s.date === selectedDate && s.elo === selectedElo);
+                      dayScores.sort((a, b) => b.score - a.score);
+                      setRushLeaderboard(dayScores);
                       setIsFetchingLb(false);
                   }, (error) => setIsFetchingLb(false));
                   return unsubscribe;
@@ -763,7 +776,38 @@
               setIsAnimating(false);
             }, 1000);
           };
+			const pushRushScoreToFirebase = async (score) => {
+              if (!fbUser || !fbDb || !window.FirebaseLib) return;
+              try {
+                  const { doc, setDoc } = window.FirebaseLib;
+                  const docRef = doc(fbDb, 'artifacts', 'tacticchess', 'public', 'data', 'rush_scores', `${selectedDate}_${selectedElo}_${fbUser.uid}`);
+                  await setDoc(docRef, { date: selectedDate, elo: selectedElo, userId: fbUser.uid, username: username || "Joueur Anonyme", score: score, timestamp: Date.now() });
+              } catch (e) {}
+          };
 
+          const startRushPhase = async () => {
+              const allDbs = await loadAllDatabases();
+              let db = allDbs[selectedElo] || databases[selectedElo];
+              if (!db || db.length === 0) return;
+              
+              const shuffledDb = shuffleArray(db, Date.now().toString());
+              setSurvivalPuzzles(shuffledDb); // Réutilisation du tableau pour une file infinie
+              setDailyPuzzles(shuffledDb); 
+              
+              setRushState({ score: 0, mistakes: 0 });
+              setCurrentPuzzleIdx(0);
+              setGlobalTime(180); // 3 minutes = 180s
+              setView('playing');
+              initPuzzle(0, shuffledDb);
+          };
+
+          const finishRush = (finalScore) => {
+              setIsAnalysisActive(false); 
+              if (engineWorker) engineWorker.postMessage('stop');
+              setIsPaused(true); 
+              setView('summary');
+              pushRushScoreToFirebase(finalScore);
+          };
           const startSurvivalPhase = async () => {
               const todaySurv = survivalHistory[selectedDate];
               if (todaySurv && todaySurv.status === 'completed') return; 
@@ -955,6 +999,20 @@
                 if (didMakeWrongMove) {
                     setGlobalTime(prev => woodpeckerState.currentCycle === 1 ? prev + 10 : Math.max(0, prev - 10));
                 }
+            } else if (gameMode === 'rush') {
+                playSound('fail'); // 1. On joue le bip d'erreur instantanément
+                setRushState(prev => {
+                    const newMistakes = prev.mistakes + 1;
+                    if (newMistakes >= 3) {
+                        // Game Over
+                        setTimeout(() => finishRush(prev.score), 1000); 
+                    } else {
+                        // 2. On passe instantanément au suivant (0.2s), sans montrer la solution
+                        setTimeout(() => { setIsAnimating(false); nextPuzzle(); }, 200);
+                    }
+                    return { ...prev, mistakes: newMistakes }; // 3. La croix rouge s'allume
+                });
+                return; // 🛑 IMPORTANT : On quitte la fonction ici pour bloquer le déplacement des pièces
             }
 
             const startAnimation = () => {
@@ -965,10 +1023,24 @@
                 if (tempIndex >= currentLine.length) {
                   setHistoryIndex(tempIndex);
                   setMaxHistoryIndex(tempIndex);
+                  
                   initialMoveTimeout.current = setTimeout(() => { 
-                      setFlipped(true); 
                       playSound('fail'); 
-                      setIsAnimating(false); 
+                      
+                      // LOGIQUE AUTO-SKIP DU RUSH
+                      if (gameMode === 'rush' && rushState.mistakes + 1 < 3) {
+                          setIsAnimating(false);
+                          setTimeout(() => nextPuzzle(), 200); // Passe tout seul au suivant en 0.2s !
+                      } else {
+                          // Pour les autres modes (ou si c'est le Game Over du Rush), on retourne la carte
+                          setFlipped(true); 
+                          setIsAnimating(false); 
+                          
+                          // Fin de partie après la 3ème erreur
+                          if (gameMode === 'rush' && rushState.mistakes + 1 >= 3) {
+                              setTimeout(() => finishRush(rushState.score), 1500);
+                          }
+                      }
                   }, 600);
                   return;
                 }
@@ -1185,7 +1257,19 @@
                 }
                 return;
             }
-            
+            if (gameMode === 'rush') {
+                if (status === 'solved') {
+                    setRushState(prev => ({ ...prev, score: prev.score + 1 }));
+                    setIsAnimating(true);
+                    playSound('success');
+                    // En Rush, on passe instantanément au suivant (0.3s) pour gagner du temps !
+                    initialMoveTimeout.current = setTimeout(() => { 
+                        setIsAnimating(false);
+                        nextPuzzle(); 
+                    }, 300); 
+                }
+                return;
+            }
             setPuzzleTimes(prev => {
               const newTimes = [...prev];
               const oldVal = newTimes[currentPuzzleIdx];
@@ -1272,7 +1356,10 @@
                 }
                 return;
             }
-    
+    if (gameMode === 'rush') {
+                initPuzzle(nextIdx, survivalPuzzles);
+                return;
+            }
     if (!isPracticeMode) {
         while(nextIdx < 5 && puzzleTimes[nextIdx] !== null) nextIdx++;
         if (nextIdx < 5) initPuzzle(nextIdx);
@@ -1434,7 +1521,45 @@
                 if (isSurv) return 'text-amber-500 opacity-10';
                 return isPerfect ? 'text-emerald-400 opacity-20' : (isCompleted ? 'text-red-400 opacity-20' : 'text-amber-400 opacity-20');
             };
+			if (gameMode === 'rush') {
+                return (
+                    <div className="flex flex-col items-center p-4 sm:p-6 space-y-5 w-full max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 overflow-y-auto pb-20">
+                        <div className="w-full flex justify-between items-center mt-2 sm:mt-4 mb-2 relative">
+                            <div className="w-10"></div>
+                            <h1 className="text-3xl sm:text-4xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
+                            <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg border border-slate-700 transition">
+                                <IconSettings />
+                            </button>
+                        </div>
+                        
+                        <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner shrink-0 overflow-x-auto no-scrollbar">
+                    <button onClick={() => setGameMode('daily')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
+                    <button onClick={() => setGameMode('woodpecker')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
+                    <button onClick={() => setGameMode('rush')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'rush' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400'}`}>Rush ⏱️</button>
+                    <button onClick={() => setGameMode('survival')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
+                </div>
 
+                        <div className="w-full">
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Difficulté (Elo)</h3>
+                            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                                {ELO_CATEGORIES.map(elo => (
+                                    <button key={elo} onClick={() => setSelectedElo(elo)} className={`flex-1 min-w-[60px] py-2 rounded-lg font-bold text-sm transition ${selectedElo === elo ? 'bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.5)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}>{elo}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="w-full p-6 rounded-2xl border flex flex-col items-center shadow-xl bg-gradient-to-br from-indigo-900/40 to-slate-800 border-indigo-500/50">
+                            <h2 className="text-2xl font-black text-indigo-400 mb-2">Puzzle Rush ⏱️</h2>
+                            <p className="text-sm text-slate-300 text-center mb-6">3 Minutes au chrono.<br/>3 Erreurs autorisées.<br/>Résolvez-en un maximum !</p>
+                            <button onClick={startRushPhase} className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-lg shadow-[0_0_15px_rgba(79,70,229,0.4)] transition transform hover:-translate-y-1 flex justify-center items-center gap-2">
+                                <IconPlay /> Lancer le Rush
+                            </button>
+                        </div>
+                        <button onClick={() => setView('leaderboard')} className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-xl font-bold border border-slate-700 shadow-lg transition flex justify-center items-center gap-2 mt-4">
+                            🏆 Classement Rush ({selectedElo} Elo)
+                        </button>
+                    </div>
+                );
+            }
             if (gameMode === 'survival') {
                 const todaySurv = survivalHistory[selectedDate];
                 const hasPlayedSurv = todaySurv !== undefined;
@@ -1451,11 +1576,12 @@
                             </button>
                         </div>
                         
-                        <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner">
-							<button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
-							<button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
-							<button onClick={() => setGameMode('woodpecker')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
-						</div>
+                        <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner shrink-0 overflow-x-auto no-scrollbar">
+                    <button onClick={() => setGameMode('daily')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
+                    <button onClick={() => setGameMode('woodpecker')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
+                    <button onClick={() => setGameMode('rush')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'rush' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400'}`}>Rush ⏱️</button>
+                    <button onClick={() => setGameMode('survival')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
+                </div>
 
                         <div className="w-full bg-slate-800 p-3 rounded-xl border border-slate-700 flex justify-between items-center shadow-md">
                             <div className="flex items-center gap-2 text-slate-300">
@@ -1518,10 +1644,11 @@
                     <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg border border-slate-700 transition"><IconSettings /></button>
                 </div>
                 
-                <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner">
-                    <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
-                    <button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
-                    <button onClick={() => setGameMode('woodpecker')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
+                <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner shrink-0 overflow-x-auto no-scrollbar">
+                    <button onClick={() => setGameMode('daily')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
+                    <button onClick={() => setGameMode('woodpecker')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
+                    <button onClick={() => setGameMode('rush')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'rush' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400'}`}>Rush ⏱️</button>
+                    <button onClick={() => setGameMode('survival')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
                 </div>
 
                 {!woodpeckerState && (
@@ -1662,10 +1789,11 @@
                     </button>
                 </div>
                 
-                <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner">
-                    <button onClick={() => setGameMode('daily')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
-                    <button onClick={() => setGameMode('survival')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
-                    <button onClick={() => setGameMode('woodpecker')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
+                <div className="w-full flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner shrink-0 overflow-x-auto no-scrollbar">
+                    <button onClick={() => setGameMode('daily')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'daily' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Classique</button>
+                    <button onClick={() => setGameMode('woodpecker')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'woodpecker' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Pic Vert 🐦</button>
+                    <button onClick={() => setGameMode('rush')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'rush' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400'}`}>Rush ⏱️</button>
+                    <button onClick={() => setGameMode('survival')} className={`flex-1 min-w-[70px] py-2 rounded-lg font-bold text-xs sm:text-sm transition ${gameMode === 'survival' ? 'bg-amber-500 text-slate-900 shadow-md' : 'text-slate-400'}`}>Survie 🔥</button>
                 </div>
 
                 <div className="w-full bg-slate-800 p-3 rounded-xl border border-slate-700 flex justify-between items-center shadow-md">
@@ -1833,7 +1961,7 @@
                     <div className="text-center mb-6">
                         <p className="text-slate-400 text-sm">Scores pour le {selectedDate}</p>
                         <p className="text-xl font-bold text-amber-400">
-                            {gameMode === 'daily' ? `Catégorie ${selectedElo} Elo` : "Mode Survie 🔥"}
+                            {gameMode === 'daily' ? `Catégorie ${selectedElo} Elo` : (gameMode === 'rush' ? `Puzzle Rush (${selectedElo} Elo) ⏱️` : "Mode Survie 🔥")}
                         </p>
                     </div>
 
@@ -1846,7 +1974,7 @@
                     ) : (
                         <div className="space-y-3 pb-8">
                             {(gameMode === 'daily' ? leaderboard : survivalLeaderboard).map((score, index) => {
-                                if (gameMode === 'survival') {
+                                if (gameMode === 'survival' || gameMode === 'rush') {
                                     return (
                                         <div key={index} className={`flex flex-col gap-2 p-4 rounded-xl border ${score.userId === fbUser?.uid ? 'bg-indigo-900/40 border-indigo-500/50' : 'bg-slate-800 border-slate-700'} shadow-md`}>
                                             <div className="flex items-center justify-between">
@@ -1937,6 +2065,28 @@
                         <p className="text-5xl font-black text-amber-400">{score} <span className="text-2xl text-slate-500">/ {maxPuz}</span></p>
                     </div>
 
+                    <div className="w-full flex gap-3 mt-4">
+                        <button onClick={copyToClipboard} className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition text-sm">Partager Score 📋</button>
+                        <button onClick={() => setView('home')} className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition text-sm">Accueil</button>
+                    </div>
+                  </div>
+                );
+            }
+			if (gameMode === 'rush') {
+                const copyToClipboard = () => {
+                    navigator.clipboard.writeText(`♟️ Tac-Tic Chess (Rush ${selectedElo} Elo) - ${selectedDate}\n⏱️ Score : ${rushState.score}\nJouez ici : ${window.location.href}`).then(() => alert("Copié !"));
+                };
+                return (
+                  <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 pb-12 overflow-y-auto">
+                    <h1 className="text-4xl font-black text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-indigo-600 drop-shadow-lg">Puzzle Rush</h1>
+                    <div className="text-center">
+                      <h2 className="text-4xl font-bold text-slate-100 mb-1">Terminé !</h2>
+                      <p className="text-slate-400 text-sm">Difficulté : {selectedElo} Elo</p>
+                    </div>
+                    <div className="w-full text-center p-6 bg-slate-800 border border-indigo-500/50 rounded-xl shadow-2xl">
+                        <p className="text-sm text-slate-300 mb-2">Score Final</p>
+                        <p className="text-6xl font-black text-indigo-400">{rushState.score}</p>
+                    </div>
                     <div className="w-full flex gap-3 mt-4">
                         <button onClick={copyToClipboard} className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition text-sm">Partager Score 📋</button>
                         <button onClick={() => setView('home')} className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold shadow-lg transition text-sm">Accueil</button>
@@ -2206,10 +2356,9 @@
                         Tac-Tic Chess
                     </h1>
 
-                    {gameMode === 'daily' || gameMode === 'woodpecker' ? (
+                    {gameMode === 'daily' || gameMode === 'woodpecker' || gameMode === 'rush' ? (
                         <div className={`text-lg sm:text-xl font-mono font-bold px-2 py-1 bg-slate-800 rounded-lg border border-slate-700 shadow-inner shrink-0 ${
-                            // L'alerte rouge ne s'active QUE si on est en compte à rebours (Daily ou Cycle > 1) et sous les 60s
-                            ((gameMode === 'daily' || (gameMode === 'woodpecker' && woodpeckerState?.currentCycle > 1)) && globalTime < 60) 
+                            (((gameMode === 'daily' || gameMode === 'rush') || (gameMode === 'woodpecker' && woodpeckerState?.currentCycle > 1)) && globalTime < 60) 
                             ? 'text-red-400 animate-pulse border-red-500/50' 
                             : 'text-slate-100'
                         }`}>
@@ -2221,7 +2370,16 @@
                         </div>
                     )}
                 </div>
-
+				{gameMode === 'rush' && (
+                    <div className="w-full flex justify-between items-center mb-3 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
+                        <div className="text-lg font-black text-slate-300">Score: <span className="text-emerald-400">{rushState.score}</span></div>
+                        <div className="text-lg font-black flex gap-2">
+                            {[...Array(3)].map((_, i) => (
+                                <span key={i} className={`transition-all ${i < rushState.mistakes ? 'opacity-100 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'opacity-20 grayscale'}`}>❌</span>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 {gameMode === 'woodpecker' ? (
                     <div className="w-full flex justify-between items-center mb-3 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
                         <div className="text-lg font-black text-slate-300">Progression: <span className="text-amber-400">{currentPuzzleIdx}</span> / {woodpeckerState?.totalPuzzles}</div>
@@ -2231,7 +2389,7 @@
                     <div className="w-full flex justify-center items-center mb-3 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
                         <div className="text-2xl font-black text-amber-400 tracking-wider">Score : {currentPuzzleIdx} <span className="text-lg text-slate-500">/ {survivalPuzzles.length || 175}</span></div>
                     </div>
-                ) : (
+                ) : gameMode === 'rush' ? null : (
                     <div className="w-full flex justify-center space-x-3 mb-3 shrink-0 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md">
                         {[0, 1, 2, 3, 4].map(i => {
                           let dotClass = '';
