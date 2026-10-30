@@ -673,7 +673,7 @@
                 setTimeout(() => finishDaily(), 2000);
             } else if (gameMode === 'woodpecker') {
                 setWoodpeckerState(prev => {
-                    const newState = { ...prev, status: 'completed', timeTaken: prev.maxTime };
+                    const newState = { ...prev, status: 'completed', timeTaken: prev.maxTime, lastCompletedTime: Date.now() };
                     
                     const accuracy = Math.round(((prev.totalPuzzles - prev.mistakes) / prev.totalPuzzles) * 100);
                     const solved = Math.max(1, prev.currentIndex);
@@ -1340,6 +1340,7 @@
                 if (nextIdx >= woodpeckerState.totalPuzzles) {
                      newState.status = 'completed';
                      newState.timeTaken = woodpeckerState.currentCycle === 1 ? globalTime : (woodpeckerState.maxTime - globalTime);
+                     newState.lastCompletedTime = Date.now(); // ⏱️ On sauvegarde l'heure exacte de fin
                      
                      // CALCUL ET SAUVEGARDE DES STATS DANS L'HISTORIQUE
                      const accuracy = Math.round(((woodpeckerState.totalPuzzles - woodpeckerState.mistakes) / woodpeckerState.totalPuzzles) * 100);
@@ -2098,6 +2099,12 @@
                 const isFinished = woodpeckerState?.status === 'completed';
                 const isTimeOut = woodpeckerState?.currentCycle > 1 && woodpeckerState?.timeRemaining <= 0;
                 
+                // CALCUL DU TEMPS DE REPOS (24h)
+                const lockDuration = 24 * 60 * 60 * 1000;
+                const timeSinceCompletion = woodpeckerState?.lastCompletedTime ? (Date.now() - woodpeckerState.lastCompletedTime) : lockDuration;
+                const isLocked = timeSinceCompletion < lockDuration;
+                const hoursLeft = Math.ceil((lockDuration - timeSinceCompletion) / (1000 * 60 * 60));
+                
                 return (
                     <div className="flex flex-col items-center justify-center p-6 space-y-6 w-full max-w-md mx-auto h-full bg-slate-900 text-slate-100 pb-12 overflow-y-auto">
                         <h1 className="text-4xl font-black text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-500 drop-shadow-lg">Tac-Tic Chess</h1>
@@ -2138,9 +2145,15 @@
                                         <p className="text-slate-300 text-xs mt-1">Vous résolvez déjà ce set en un coup d'œil. Inutile d'aller jusqu'au cycle 7, vous pouvez l'abandonner et passer à l'Elo supérieur !</p>
                                     </div>
                                 )}
-                                <button onClick={() => handleNextWoodpeckerCycle(false)} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition text-lg flex justify-center items-center gap-2">
-                                    <IconPlay /> Démarrer le Cycle {woodpeckerState.currentCycle + 1}
-                                </button>
+                                {isLocked ? (
+                                    <div className="w-full py-4 bg-slate-800 border border-slate-700 text-slate-500 rounded-xl font-bold shadow-inner flex justify-center items-center gap-2 cursor-not-allowed mt-2 text-sm sm:text-base">
+                                        🔒 Repos neuronal requis (Dispo dans ~{hoursLeft}h)
+                                    </div>
+                                ) : (
+                                    <button onClick={() => handleNextWoodpeckerCycle(false)} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg transition text-lg flex justify-center items-center gap-2">
+                                        <IconPlay /> Démarrer le Cycle {woodpeckerState.currentCycle + 1}
+                                    </button>
+                                )}
                             </div>
                         )}
 
@@ -2576,11 +2589,22 @@
                       )
                   )}
 
+                  {gameMode === 'rush' && (
+                      puzzleState === 'playing' ? (
+                          <button onClick={surrenderPuzzle} disabled={isAnimating} className="w-full py-2.5 bg-slate-800 hover:bg-red-900/30 disabled:opacity-50 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/50 rounded-xl font-bold transition text-base shadow-lg">
+                              Passer le problème
+                          </button>
+                      ) : (
+                          <button onClick={(e) => { e.stopPropagation(); nextPuzzle(); }} disabled={isAnimating || rushState.mistakes >= 3} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg text-base transition">
+                              {rushState.mistakes >= 3 ? "Terminer le Rush" : "Problème Suivant"}
+                          </button>
+                      )
+                  )}
+
                 </div>
               </div>
             );
           };
-
           return (
             <div className="flex h-screen bg-slate-900 w-full overflow-hidden">
                 <SettingsModal />
