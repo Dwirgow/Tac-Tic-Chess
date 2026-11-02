@@ -904,7 +904,7 @@
             setCurrentPuzzleIdx(0); setGlobalTime(0); setView('playing'); initPuzzle(0, puzzles);
           };
 
-          const handleNextWoodpeckerCycle = (isRetry = false) => {
+          const handleNextWoodpeckerCycle = async (isRetry = false) => {
             const cycleNum = isRetry ? woodpeckerState.currentCycle : woodpeckerState.currentCycle + 1;
             const originalCount = woodpeckerState.originalCount;
 
@@ -919,7 +919,14 @@
             const floorTime = originalCount * 5;
             if (nextMaxTime < floorTime && woodpeckerState.currentCycle !== 1) nextMaxTime = floorTime;
 
+            // --- CORRECTION DU CHARGEMENT DE LA BASE DE DONNÉES ---
             let db = databases[woodpeckerState.elo];
+            if (!db || db.length === 0) { 
+                const allDbs = await loadAllDatabases(); 
+                db = allDbs[woodpeckerState.elo]; 
+            }
+            if (!db) return;
+
             let puzzles = db.slice(0, originalCount);
             
             // On mélange l'ordre des problèmes pour chaque nouveau cycle afin d'éviter la mémoire séquentielle
