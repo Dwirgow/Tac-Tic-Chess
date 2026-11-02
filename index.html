@@ -680,7 +680,7 @@
                     const avgTime = Math.floor(newState.timeTaken / solved);
                     
                     const filteredHistory = (prev.history || []).filter(h => h.cycle !== prev.currentCycle);
-                    newState.history = [...filteredHistory, { cycle: prev.currentCycle, accuracy, avgTime, timeout: true }];
+                    newState.history = [...filteredHistory, { cycle: prev.currentCycle, accuracy, avgTime, timeout: true, totalTime: newState.timeTaken }];
 
                     localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
                     return newState;
@@ -1161,8 +1161,8 @@
             if (e.button !== undefined && e.button !== 0) return;
             if (isAnimating || !game) return;
             
-            if (puzzleState === 'playing' && isPaused && !isAnalysisActive) return;
-
+            if (puzzleState === 'playing' && isPaused && !isAnalysisActive) return; 
+			
 			if (gameMode === 'woodpecker' && puzzleState === 'playing' && currentPuzzleTime < 3 && !isAnalysisActive) {
                 return; 
             }
@@ -1358,7 +1358,7 @@
                      const avgTime = Math.floor(newState.timeTaken / woodpeckerState.totalPuzzles);
                      
                      const filteredHistory = (woodpeckerState.history || []).filter(h => h.cycle !== woodpeckerState.currentCycle);
-                     newState.history = [...filteredHistory, { cycle: woodpeckerState.currentCycle, accuracy, avgTime, timeout: false }];
+                     newState.history = [...filteredHistory, { cycle: woodpeckerState.currentCycle, accuracy, avgTime, timeout: false, totalTime: newState.timeTaken }];
                      
                      setWoodpeckerState(newState); localStorage.setItem('chessWoodpecker_state', JSON.stringify(newState));
                      finishWoodpecker();
@@ -1712,7 +1712,7 @@
                                                 {woodpeckerState.history.sort((a,b) => a.cycle - b.cycle).map(h => (
                                                     <div key={h.cycle} className="flex justify-between items-center bg-slate-800 p-2 rounded-lg border border-slate-700/50">
                                                         <span className="font-bold text-sm text-amber-400">Cycle {h.cycle} {h.timeout && <span className="text-red-400 text-[10px] ml-1">(Tps écoulé)</span>}</span>
-                                                        <div className="flex gap-4 text-xs">
+                                                        <div className="flex gap-2 sm:gap-4 text-xs">
                                                             <div className="flex flex-col items-center w-12">
                                                                 <span className="text-[9px] text-slate-500 uppercase">Précision</span>
                                                                 <span className="font-mono text-emerald-400 font-bold">{h.accuracy}%</span>
@@ -1720,6 +1720,12 @@
                                                             <div className="flex flex-col items-center w-12">
                                                                 <span className="text-[9px] text-slate-500 uppercase">Tps/Prob</span>
                                                                 <span className="font-mono text-indigo-400 font-bold">{formatTime(h.avgTime)}</span>
+                                                            </div>
+                                                            <div className="flex flex-col items-center w-12">
+                                                                <span className="text-[9px] text-slate-500 uppercase">Total</span>
+                                                                <span className="font-mono text-amber-400 font-bold">
+                                                                    {h.totalTime ? formatTime(h.totalTime) : formatTime(h.avgTime * woodpeckerState.totalPuzzles)}
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     </div>
