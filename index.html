@@ -1161,7 +1161,11 @@
             if (e.button !== undefined && e.button !== 0) return;
             if (isAnimating || !game) return;
             
-            if (puzzleState === 'playing' && isPaused && !isAnalysisActive) return; 
+            if (puzzleState === 'playing' && isPaused && !isAnalysisActive) return;
+
+			if (gameMode === 'woodpecker' && puzzleState === 'playing' && currentPuzzleTime < 3 && !isAnalysisActive) {
+                return; 
+            }
 
             // Si l'analyse n'est pas active et que le problème est fini, on ne bouge rien
             if (puzzleState !== 'playing' && !isAnalysisActive) return;
