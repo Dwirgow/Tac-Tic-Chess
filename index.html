@@ -658,6 +658,7 @@
             setIsPaused(true);
             setPuzzleState('failed');
             if (gameMode === 'daily') {
+                let finalTimes;
                 setPuzzleTimes(prev => {
                   const newTimes = [...prev];
                   if (!isPracticeMode) {
@@ -667,10 +668,14 @@
                           }
                       }
                       saveDailyProgress(newTimes, 0);
+                  } else {
+                      newTimes[currentPuzzleIdx] = `NA_${currentPuzzleTime}`;
                   }
+                  finalTimes = newTimes;
                   return newTimes;
                 });
-                setTimeout(() => finishDaily(), 2000);
+                // On passe explicitement les résultats corrigés à finishDaily
+                setTimeout(() => finishDaily(false, finalTimes), 2000);
             } else if (gameMode === 'woodpecker') {
                 setWoodpeckerState(prev => {
                     const newState = { ...prev, status: 'completed', timeTaken: prev.maxTime, lastCompletedTime: Date.now() };
@@ -1163,7 +1168,7 @@
             
             if (puzzleState === 'playing' && isPaused && !isAnalysisActive) return; 
 			
-			if (gameMode === 'woodpecker' && puzzleState === 'playing' && currentPuzzleTime < 2 && !isAnalysisActive) {
+			if (gameMode === 'woodpecker' && puzzleState === 'playing' && currentPuzzleTime < 3 && !isAnalysisActive) {
                 return; 
             }
 
@@ -1412,7 +1417,7 @@
               saveSurvivalProgress(finalScore, 'completed');
           };
 
-          const finishDaily = async (goToHome = false) => {
+          const finishDaily = async (goToHome = false, forcedTimes = null) => {
             setIsAnalysisActive(false);
             if (engineWorker) engineWorker.postMessage('stop');
 
@@ -1421,10 +1426,12 @@
 
             const hKey = getHistoryKey(selectedDate, selectedElo);
             const oldHistoryDay = history[hKey];
-            const mergedTimes = [...puzzleTimes];
+            
+            // Si forcedTimes est fourni par le timeout, on l'utilise. Sinon on prend le state habituel.
+            const mergedTimes = forcedTimes || [...puzzleTimes];
 
             if (!isPracticeMode) {
-                saveDailyProgress(mergedTimes, globalTime); 
+                saveDailyProgress(mergedTimes, forcedTimes ? 0 : globalTime); 
             } else {
                 const officialTimes = oldHistoryDay ? (oldHistoryDay.officialTimes || oldHistoryDay.times) : mergedTimes;
                 const newHistory = { ...history, [hKey]: { times: mergedTimes, officialTimes: officialTimes, remainingTime: oldHistoryDay ? oldHistoryDay.remainingTime : 300, timestamp: Date.now() } };
